@@ -34,13 +34,36 @@
     },
     "commands": [
       {
+        "command": "scanax.openPanel",
+        "title": "Open Vulnerability Panel",
+        "icon": "$(window)",
+        "category": "Scanax"
+      },
+      {
+        "command": "scanax.scanNow",
+        "title": "Scan Workspace Now",
+        "icon": "$(play)",
+        "category": "Scanax"
+      },
+      {
         "command": "scanax.runScan",
         "title": "Scanax: Run Security Scan",
-        "category": "Scanax"
+        "category": "Scanax",
+        "icon": "$(shield)"
       },
       {
         "command": "scanax.applyFix",
         "title": "Scanax: Apply AI Fix"
+      },
+      {
+        "command": "scanax.workspaceScan",
+        "title": "Scanax: Workspace-wide Security Scan",
+        "category": "Scanax"
+      },
+      {
+        "command": "scanax.fixVulnerability",
+        "title": "Fix Vulnerability",
+        "icon": "$(tools)"
       }
     ],
     "menus": {
@@ -49,7 +72,44 @@
           "command": "scanax.runScan",
           "group": "navigation"
         }
+      ],
+      "view/title": [
+        {
+          "command": "scanax.scanNow",
+          "when": "view == scanax.securityDashboard",
+          "group": "navigation"
+        },
+        {
+          "command": "scanax.openPanel",
+          "when": "view == scanax.securityDashboard",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "scanax.fixVulnerability",
+          "when": "view == scanax.securityDashboard && viewItem == vulnerability",
+          "group": "inline"
+        }
       ]
+    },
+    "configuration": {
+      "title": "Scanax",
+      "properties": {
+        "scanax.provider": {
+          "type": "string",
+          "enum": ["Default (Free)", "Groq (Custom)"],
+          "default": "Default (Free)",
+          "description": "Choose which LLM provider to use for security scanning"
+        },
+        "scanax.customApiKey": {
+          "type": "string",
+          "default": "",
+          "description": "Your Groq API key (leave empty to use Default provider)",
+          "markdownDescription": "Your Groq API key for custom scanning. [Get a free key](https://console.groq.com/keys)",
+          "editPresentation": "multilineText"
+        }
+      }
     }
   },
   "scripts": {
