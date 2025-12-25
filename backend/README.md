@@ -6,7 +6,7 @@ A FastAPI-based security code analyzer backend that uses Google's Gemini 1.5 Fla
 
 1. **Create a virtual environment:**
    ```bash
-   python -m venv venv
+   python3 -m venv venv
    source venv/bin/activate  # On Windows: venv\Scripts\activate
    ```
 
@@ -25,7 +25,7 @@ A FastAPI-based security code analyzer backend that uses Google's Gemini 1.5 Fla
 
 4. **Run the server:**
    ```bash
-   python main.py
+   python3 main.py
    ```
    
    The server will start on `http://localhost:8000`

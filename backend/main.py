@@ -1,123 +1,84 @@
 import os
 import json
-import re
+import logging
 from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-import google.generativeai as genai
+from groq import Groq
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
+# Load variables from .env
 load_dotenv()
 
-app = FastAPI(title="Scanax Backend")
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("ScanaxGroqOnly")
 
-# Configure CORS to allow requests from VS Code extension
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app = FastAPI(title="Scanax Groq-Powered Security")
 
-# Configure Gemini API
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-if not GEMINI_API_KEY:
-    raise ValueError("GEMINI_API_KEY environment variable is not set. Please create a .env file with your API key.")
+# Initialize Groq Client
+# Ensure GROQ_API_KEY is in your .env file
+client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
-genai.configure(api_key=GEMINI_API_KEY)
+# Production Model ID for Late 2025
+MODEL_ID = "llama-3.3-70b-versatile"
 
+SYSTEM_PROMPT = """
+ACT AS A SENIOR SECURITY ENGINEER.
+Your task is to analyze the provided code for security vulnerabilities (SQL Injection, XSS, Hardcoded Secrets, etc.).
 
-class CodeAnalysisRequest(BaseModel):
-    code: str
+OUTPUT RULES:
+1. Return ONLY a JSON object.
+2. The object must contain a key "errors" which is an array of objects.
+3. Each error object must have: "line" (number), "message" (string), and "fix" (string).
 
+FORMAT EXAMPLE:
+{
+  "errors": [
+    {"line": 5, "message": "Hardcoded API Key", "fix": "const key = process.env.API_KEY;"}
+  ]
+}
+"""
 
-class Vulnerability(BaseModel):
-    line: int
-    message: str
-    fix: str
-
-
-class AnalysisResponse(BaseModel):
-    errors: list[Vulnerability]
-
-
-@app.post("/analyze", response_model=AnalysisResponse)
-async def analyze_code(request: CodeAnalysisRequest) -> AnalysisResponse:
-    """
-    Analyze code for security vulnerabilities using Gemini 1.5 Flash.
-    """
-    if not request.code.strip():
-        return AnalysisResponse(errors=[])
+@app.post("/analyze")
+async def analyze_code(request: dict):
+    code = request.get("code", "")
+    if not code.strip():
+        return {"errors": []}
 
     try:
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        logger.info(f"Sending request to Groq ({MODEL_ID})...")
         
-        prompt = f"""You are a security code analyzer. Analyze the following code for security vulnerabilities.
-For each vulnerability found, return a JSON array with this exact format:
-[
-  {{"line": <line_number>, "message": "<vulnerability_description>", "fix": "<suggested_fix>"}},
-  ...
-]
-
-Only return the JSON array, no other text.
-
-Code to analyze:
-```
-{request.code}
-```
-
-Important:
-1. Line numbers should match the actual line numbers in the code (1-based indexing)
-2. Only return JSON, no markdown or explanation
-3. If no vulnerabilities found, return an empty array: []"""
-
-        response = model.generate_content(prompt)
-        
-        # Extract JSON from response
-        response_text = response.text.strip()
-        
-        # Try to find JSON array in the response
-        json_match = re.search(r'\[.*\]', response_text, re.DOTALL)
-        if json_match:
-            json_str = json_match.group(0)
-        else:
-            json_str = response_text
-        
-        vulnerabilities = json.loads(json_str)
-        
-        # Validate and convert to Vulnerability objects
-        errors = []
-        for vuln in vulnerabilities:
-            try:
-                errors.append(Vulnerability(
-                    line=int(vuln.get("line", 0)),
-                    message=str(vuln.get("message", "Unknown vulnerability")),
-                    fix=str(vuln.get("fix", "No fix suggested"))
-                ))
-            except (ValueError, KeyError):
-                continue
-        
-        return AnalysisResponse(errors=errors)
-    
-    except json.JSONDecodeError as e:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Failed to parse Gemini response as JSON: {str(e)}"
+        # chat.completions.create is synchronous, but Groq is so fast it won't block 
+        # for long. For higher scale, wrap in run_in_executor.
+        completion = client.chat.completions.create(
+            model=MODEL_ID,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": f"Analyze this code:\n\n{code}"}
+            ],
+            # JSON Mode ensures we get a valid JSON object back
+            response_format={"type": "json_object"},
+            temperature=0.2, # Lower temperature = more consistent security analysis
         )
+
+        # Parse and return
+        raw_content = completion.choices[0].message.content
+        result = json.loads(raw_content)
+        
+        # Extract the errors list
+        errors = result.get("errors", [])
+        logger.info(f"Analysis successful. Found {len(errors)} potential issues.")
+        
+        return {"errors": errors}
+
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error analyzing code: {str(e)}"
-        )
-
+        logger.error(f"Groq API Error: {str(e)}")
+        if "429" in str(e):
+            raise HTTPException(status_code=429, detail="Groq rate limit hit. Please wait a moment.")
+        raise HTTPException(status_code=500, detail="Internal analysis failure.")
 
 @app.get("/health")
-async def health_check():
-    """Health check endpoint."""
-    return {"status": "ok"}
-
+async def health():
+    return {"status": "active", "engine": "Groq Llama-3.3"}
 
 if __name__ == "__main__":
     import uvicorn

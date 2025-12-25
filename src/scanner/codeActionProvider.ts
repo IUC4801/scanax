@@ -1,9 +1,6 @@
 import * as vscode from 'vscode';
-import { DiagnosticManager } from './diagnosticManager';
 
 export class ScanaxCodeActionProvider implements vscode.CodeActionProvider {
-	constructor(private diagnosticManager: DiagnosticManager) {}
-
 	provideCodeActions(
 		document: vscode.TextDocument,
 		range: vscode.Range,
@@ -38,7 +35,7 @@ export class ScanaxCodeActionProvider implements vscode.CodeActionProvider {
 		action.command = {
 			command: 'scanax.applyFix',
 			title: 'Apply Scanax Fix',
-			arguments: [document, diagnostic, fix],
+			arguments: [document, diagnostic.range, fix],
 		};
 
 		action.diagnostics = [diagnostic];

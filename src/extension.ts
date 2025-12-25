@@ -3,92 +3,109 @@ import { sendCodeToScanaxBackend } from './services/apiService';
 import { DiagnosticManager } from './scanner/diagnosticManager';
 import { ScanaxCodeActionProvider } from './scanner/codeActionProvider';
 
+// Simple Data Provider for the Sidebar
+class ScanaxDataProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
+    private _onDidChangeTreeData: vscode.EventEmitter<vscode.TreeItem | undefined | void> = new vscode.EventEmitter<vscode.TreeItem | undefined | void>();
+    readonly onDidChangeTreeData: vscode.Event<vscode.TreeItem | undefined | void> = this._onDidChangeTreeData.event;
+
+    getTreeItem(element: vscode.TreeItem): vscode.TreeItem {
+        return element;
+    }
+
+    getChildren(element?: vscode.TreeItem): vscode.ProviderResult<vscode.TreeItem[]> {
+        if (!element) {
+            return [
+                new vscode.TreeItem("Scan your files to see results", vscode.TreeItemCollapsibleState.None)
+            ];
+        }
+        return [];
+    }
+
+    refresh(): void {
+        this._onDidChangeTreeData.fire();
+    }
+}
+
 let diagnosticManager: DiagnosticManager;
 
 export function activate(context: vscode.ExtensionContext) {
-	// Initialize the diagnostic manager
-	diagnosticManager = new DiagnosticManager();
+    console.log('Scanax is now active');
 
-	// Register the scanax.runScan command
-	const runScanCommand = vscode.commands.registerCommand('scanax.runScan', async () => {
-		const editor = vscode.window.activeTextEditor;
+    // 1. Initialize Managers and Providers
+    diagnosticManager = new DiagnosticManager();
+    const scanaxDataProvider = new ScanaxDataProvider();
 
-		if (!editor) {
-			vscode.window.showWarningMessage('No active editor found. Please open a file to scan.');
-			return;
-		}
+    // 2. Register Sidebar View
+    vscode.window.registerTreeDataProvider('scanax.securityDashboard', scanaxDataProvider);
 
-		const code = editor.document.getText();
+    // 3. Register Commands
+    const runScanCommand = vscode.commands.registerCommand('scanax.runScan', async () => {
+        const editor = vscode.window.activeTextEditor;
+        if (!editor) {
+            vscode.window.showWarningMessage('No active editor found.');
+            return;
+        }
 
-		// Show progress notification while scanning
-		vscode.window.withProgress(
-			{
-				location: vscode.ProgressLocation.Notification,
-				title: 'Scanax: Analyzing code...',
-				cancellable: false,
-			},
-			async (progress) => {
-				try {
-					const result = await sendCodeToScanaxBackend(code);
-					vscode.window.showInformationMessage('Scanax: Scan completed successfully');
-					console.log('Scan result:', result);
-				} catch (error) {
-					const errorMessage = error instanceof Error ? error.message : String(error);
-					vscode.window.showErrorMessage(`Scanax: ${errorMessage}`);
-				}
-			}
-		);
-	});
+        await vscode.window.withProgress({
+            location: vscode.ProgressLocation.Notification,
+            title: "Scanax: Analyzing code...",
+            cancellable: false
+        }, async () => {
+            try {
+                const code = editor.document.getText();
+                const response = await sendCodeToScanaxBackend(code);
+                
+                // FIXED: Extracts the errors array from the backend response object
+                const vulnerabilities = (response && response.errors) ? response.errors : [];
+                
+                // Update squiggles in the editor using the array
+                diagnosticManager.setDiagnostics(editor.document, vulnerabilities);
+                scanaxDataProvider.refresh();
+                
+                vscode.window.showInformationMessage(`Scanax: Found ${vulnerabilities.length} issues.`);
+            } catch (err) {
+                vscode.window.showErrorMessage(`Scanax Error: ${err}`);
+            }
+        });
+    });
 
-	// Register the applyFix command
-	const applyFixCommand = vscode.commands.registerCommand(
-		'scanax.applyFix',
-		async (document: vscode.TextDocument, diagnostic: vscode.Diagnostic, fix: string) => {
-			try {
-				const edit = new vscode.WorkspaceEdit();
-				const lineNumber = diagnostic.range.start.line;
-				const line = document.lineAt(lineNumber);
+    // This command is triggered by the CodeActionProvider lightbulb
+    const applyFixCommand = vscode.commands.registerCommand(
+        'scanax.applyFix',
+        async (document: vscode.TextDocument, range: vscode.Range, fixText: string) => {
+            const edit = new vscode.WorkspaceEdit();
+            edit.replace(document.uri, range, fixText);
+            await vscode.workspace.applyEdit(edit);
+            vscode.window.showInformationMessage('Scanax: Fix applied.');
+        }
+    );
 
-				// Replace the entire line with the fixed version
-				edit.replace(document.uri, line.range, fix);
-				await vscode.workspace.applyEdit(edit);
+    // 4. Register Code Actions (Lightbulb)
+    const codeActionProvider = vscode.languages.registerCodeActionsProvider(
+        { scheme: 'file', language: 'javascript' }, // Specify language to ensure it triggers correctly
+        new ScanaxCodeActionProvider(),
+        { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] }
+    );
 
-				vscode.window.showInformationMessage('Scanax: Fix applied successfully');
-			} catch (error) {
-				const errorMessage = error instanceof Error ? error.message : String(error);
-				vscode.window.showErrorMessage(`Scanax: Failed to apply fix - ${errorMessage}`);
-			}
-		}
-	);
+    // 5. Lifecycle Events
+    // Automatically triggers a scan when the user saves a file
+    const onSave = vscode.workspace.onDidSaveTextDocument((doc) => {
+        if (doc.languageId === 'javascript' || doc.languageId === 'typescript') {
+            vscode.commands.executeCommand('scanax.runScan');
+        }
+    });
 
-	// Register the CodeActionProvider
-	const codeActionProvider = new ScanaxCodeActionProvider(diagnosticManager);
-	const codeActionProviderDisposable = vscode.languages.registerCodeActionsProvider(
-		{ scheme: 'file' },
-		codeActionProvider
-	);
-
-	// Hook into document open event
-	const onOpenDocument = vscode.workspace.onDidOpenTextDocument((document) => {
-		diagnosticManager.updateDiagnostics(document);
-	});
-
-	// Hook into document save event
-	const onSaveDocument = vscode.workspace.onDidSaveTextDocument((document) => {
-		diagnosticManager.updateDiagnostics(document);
-	});
-
-	context.subscriptions.push(runScanCommand, applyFixCommand, codeActionProviderDisposable, onOpenDocument, onSaveDocument);
-
-	// Scan any already-open documents
-	vscode.workspace.textDocuments.forEach((document) => {
-		diagnosticManager.updateDiagnostics(document);
-	});
-
-	// Activate the Security Dashboard view
-	vscode.window.showInformationMessage('Scanax extension activated');
+    context.subscriptions.push(
+        runScanCommand, 
+        applyFixCommand, 
+        codeActionProvider, 
+        onSave,
+        diagnosticManager
+    );
 }
 
 export function deactivate() {
-	diagnosticManager.dispose();
+    if (diagnosticManager) {
+        diagnosticManager.dispose(); // Cleanup collection to prevent memory leaks
+    }
 }

@@ -1,62 +1,83 @@
 import * as vscode from 'vscode';
 import { sendCodeToScanaxBackend } from '../services/apiService';
 
+/**
+ * Custom interface to extend the standard Diagnostic.
+ * This lets us carry the 'fix' code from the backend to the Lightbulb menu.
+ */
+export interface ScanaxDiagnostic extends vscode.Diagnostic {
+    fixContent?: string;
+}
+
 export class DiagnosticManager {
-	private diagnosticCollection: vscode.DiagnosticCollection;
+    private diagnosticCollection: vscode.DiagnosticCollection;
 
-	constructor() {
-		this.diagnosticCollection = vscode.languages.createDiagnosticCollection('scanax');
-	}
+    constructor() {
+        // Creates the 'Scanax' category in the Problems tab
+        this.diagnosticCollection = vscode.languages.createDiagnosticCollection('scanax');
+    }
 
-	async updateDiagnostics(document: vscode.TextDocument): Promise<void> {
-		try {
-			const code = document.getText();
-			const response = await sendCodeToScanaxBackend(code);
+    async updateDiagnostics(document: vscode.TextDocument): Promise<void> {
+        try {
+            const code = document.getText();
+            const response = await sendCodeToScanaxBackend(code);
+            
+            // Your FastAPI returns { "errors": [...] } from the AnalysisResponse model
+            if (response && response.errors) {
+                this.setDiagnostics(document, response.errors);
+            }
+        } catch (error) {
+            // Clear diagnostics on error to avoid stale squiggles
+            this.diagnosticCollection.set(document.uri, []);
+            console.error('Diagnostic update error:', error);
+        }
+    }
 
-			const diagnostics: vscode.Diagnostic[] = [];
+    public setDiagnostics(document: vscode.TextDocument, vulnerabilities: any[]): void {
+        const diagnostics: ScanaxDiagnostic[] = [];
 
-			// Process the backend response to create diagnostics
-			if (response.errors && Array.isArray(response.errors)) {
-				for (const error of response.errors) {
-					const lineNumber = error.line ? error.line - 1 : 0; // Convert to 0-based index
-					const message = error.message || 'Security issue detected';
-					const severity = error.severity === 'error' ? vscode.DiagnosticSeverity.Error : vscode.DiagnosticSeverity.Warning;
+        vulnerabilities.forEach(vuln => {
+            // Convert 1-based line (Gemini) to 0-based line (VS Code)
+            const lineIdx = Math.max(0, (vuln.line || 1) - 1);
+            const line = document.lineAt(Math.min(lineIdx, document.lineCount - 1));
+            const range = new vscode.Range(line.range.start, line.range.end);
 
-					// Create a range for the diagnostic (highlight the entire line)
-					const line = document.lineAt(Math.min(lineNumber, document.lineCount - 1));
-					const range = new vscode.Range(line.range.start, line.range.end);
+            const diagnostic: ScanaxDiagnostic = new vscode.Diagnostic(
+                range,
+                vuln.message || "Security issue detected",
+                vscode.DiagnosticSeverity.Error
+            );
 
-					const diagnostic = new vscode.Diagnostic(range, message, severity);
-					diagnostic.source = 'Scanax';
-					
-					// Attach the fix suggestion as related information
-					if (error.fix) {
-						diagnostic.relatedInformation = [
-							new vscode.DiagnosticRelatedInformation(
-								new vscode.Location(document.uri, range.start),
-								`Suggested fix: ${error.fix}`
-							),
-						];
-					}
-					
-					diagnostics.push(diagnostic);
-				}
-			}
+            // This MUST match what your CodeActionProvider filters for
+            diagnostic.source = 'Scanax';
+            
+            // Stash the raw fix content
+            diagnostic.fixContent = vuln.fix; 
 
-			// Update the diagnostic collection for this document
-			this.diagnosticCollection.set(document.uri, diagnostics);
-		} catch (error) {
-			// Clear diagnostics on error
-			this.diagnosticCollection.set(document.uri, []);
-			console.error('Diagnostic update error:', error);
-		}
-	}
+            // IMPORTANT: Your CodeActionProvider specifically searches for "Suggested fix:" 
+            // in relatedInformation to build the Quick Fix menu
+            if (vuln.fix) {
+                diagnostic.relatedInformation = [
+                    new vscode.DiagnosticRelatedInformation(
+                        new vscode.Location(document.uri, range),
+                        `Suggested fix: ${vuln.fix}`
+                    )
+                ];
+            }
 
-	clearDiagnostics(document: vscode.TextDocument): void {
-		this.diagnosticCollection.delete(document.uri);
-	}
+            diagnostics.push(diagnostic);
+        });
 
-	dispose(): void {
-		this.diagnosticCollection.dispose();
-	}
+        // Update the editor squiggles for this specific document
+        this.diagnosticCollection.set(document.uri, diagnostics);
+    }
+
+    public clearDiagnostics(document: vscode.TextDocument): void {
+        this.diagnosticCollection.delete(document.uri);
+    }
+
+    public dispose(): void {
+        this.diagnosticCollection.clear();
+        this.diagnosticCollection.dispose();
+    }
 }
