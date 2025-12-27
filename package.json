@@ -1,9 +1,37 @@
 {
   "name": "scanax",
-  "displayName": "Scanax",
-  "description": "Security scanning extension for VS Code",
+  "displayName": "Scanax Security Scanner",
+  "description": "AI-powered security vulnerability scanner with real-time detection and automated fix suggestions",
   "version": "0.0.1",
-  "publisher": "your-name",
+  "publisher": "Ayushi Chaudhuri",
+  "icon": "resources/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/IUC4801/scanax"
+  },
+  "bugs": {
+    "url": "https://github.com/IUC4801/scanax/issues"
+  },
+  "license": "MIT",
+  "keywords": [
+    "security",
+    "vulnerability",
+    "scanner",
+    "code analysis",
+    "AI",
+    "SQL injection",
+    "XSS",
+    "OWASP",
+    "CWE",
+    "static analysis",
+    "dependency scanner",
+    "secret detection"
+  ],
+  "categories": [
+    "Linters",
+    "Programming Languages",
+    "Other"
+  ],
   "engines": {
     "vscode": "^1.75.0"
   },
@@ -64,6 +92,30 @@
         "command": "scanax.fixVulnerability",
         "title": "Fix Vulnerability",
         "icon": "$(tools)"
+      },
+      {
+        "command": "scanax.scanDependencies",
+        "title": "Scanax: Scan Dependencies for Vulnerabilities",
+        "category": "Scanax",
+        "icon": "$(package)"
+      },
+      {
+        "command": "scanax.showWelcome",
+        "title": "Scanax: Show Welcome Page",
+        "category": "Scanax",
+        "icon": "$(home)"
+      },
+      {
+        "command": "scanax.startTutorial",
+        "title": "Scanax: Start Tutorial",
+        "category": "Scanax",
+        "icon": "$(mortar-board)"
+      },
+      {
+        "command": "scanax.openSampleCode",
+        "title": "Scanax: Open Sample Vulnerable Code",
+        "category": "Scanax",
+        "icon": "$(file-code)"
       }
     ],
     "menus": {
@@ -108,9 +160,38 @@
           "description": "Your Groq API key (leave empty to use Default provider)",
           "markdownDescription": "Your Groq API key for custom scanning. [Get a free key](https://console.groq.com/keys)",
           "editPresentation": "multilineText"
+        },
+        "scanax.showWelcome": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show welcome page on first activation"
+        },
+        "scanax.backendUrl": {
+          "type": "string",
+          "default": "http://localhost:8000",
+          "description": "Scanax backend API URL",
+          "markdownDescription": "Backend server URL. Use `http://localhost:8000` for local or your deployed URL (e.g., `https://scanax-backend.onrender.com`)"
         }
       }
-    }
+    },
+    "keybindings": [
+      {
+        "command": "scanax.runScan",
+        "key": "ctrl+shift+s",
+        "mac": "cmd+shift+s",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "scanax.workspaceScan",
+        "key": "ctrl+shift+w",
+        "mac": "cmd+shift+w"
+      },
+      {
+        "command": "scanax.openPanel",
+        "key": "ctrl+shift+v",
+        "mac": "cmd+shift+v"
+      }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",

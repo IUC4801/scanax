@@ -44,7 +44,7 @@ export class DiagnosticManager {
 
             const diagnostic: ScanaxDiagnostic = new vscode.Diagnostic(
                 range,
-                vuln.message || "Security issue detected",
+                vuln.message || vuln.title || "Security issue detected",
                 vscode.DiagnosticSeverity.Error
             );
 
@@ -54,15 +54,54 @@ export class DiagnosticManager {
             // Stash the raw fix content
             diagnostic.fixContent = vuln.fix; 
 
-            // IMPORTANT: Your CodeActionProvider specifically searches for "Suggested fix:" 
-            // in relatedInformation to build the Quick Fix menu
+            // Enhanced: Store all metadata in relatedInformation for hover provider
+            const relatedInfo: vscode.DiagnosticRelatedInformation[] = [];
+            
             if (vuln.fix) {
-                diagnostic.relatedInformation = [
-                    new vscode.DiagnosticRelatedInformation(
-                        new vscode.Location(document.uri, range),
-                        `Suggested fix: ${vuln.fix}`
-                    )
-                ];
+                relatedInfo.push(new vscode.DiagnosticRelatedInformation(
+                    new vscode.Location(document.uri, range),
+                    `Suggested fix: ${vuln.fix}`
+                ));
+            }
+            if (vuln.description) {
+                relatedInfo.push(new vscode.DiagnosticRelatedInformation(
+                    new vscode.Location(document.uri, range),
+                    `Description: ${vuln.description}`
+                ));
+            }
+            if (vuln.category) {
+                relatedInfo.push(new vscode.DiagnosticRelatedInformation(
+                    new vscode.Location(document.uri, range),
+                    `Category: ${vuln.category}`
+                ));
+            }
+            if (vuln.recommendation) {
+                relatedInfo.push(new vscode.DiagnosticRelatedInformation(
+                    new vscode.Location(document.uri, range),
+                    `Recommendation: ${vuln.recommendation}`
+                ));
+            }
+            if (vuln.cwe) {
+                relatedInfo.push(new vscode.DiagnosticRelatedInformation(
+                    new vscode.Location(document.uri, range),
+                    `CWE: ${vuln.cwe}`
+                ));
+            }
+            if (vuln.score) {
+                relatedInfo.push(new vscode.DiagnosticRelatedInformation(
+                    new vscode.Location(document.uri, range),
+                    `Score: ${vuln.score}`
+                ));
+            }
+            if (vuln.severity) {
+                relatedInfo.push(new vscode.DiagnosticRelatedInformation(
+                    new vscode.Location(document.uri, range),
+                    `Severity: ${vuln.severity}`
+                ));
+            }
+            
+            if (relatedInfo.length > 0) {
+                diagnostic.relatedInformation = relatedInfo;
             }
 
             diagnostics.push(diagnostic);

@@ -1,8 +1,11 @@
 import * as vscode from 'vscode';
-import { sendCodeToScanaxBackend, requestFix } from './services/apiService';
+import * as path from 'path';
+import { sendCodeToScanaxBackend, requestFix, scanDependencies } from './services/apiService';
 import { DiagnosticManager } from './scanner/diagnosticManager';
 import { ScanaxCodeActionProvider } from './scanner/codeActionProvider';
+import { ScanaxHoverProvider } from './scanner/hoverProvider';
 import { VulnerabilityPanel } from './webview/panel';
+import { WelcomePanel } from './webview/welcomePanel';
 
 // Tree item for file vulnerabilities
 class VulnerabilityTreeItem extends vscode.TreeItem {
@@ -83,51 +86,60 @@ export function activate(context: vscode.ExtensionContext) {
 
     vscode.window.registerTreeDataProvider('scanax.securityDashboard', vulnerabilityTreeProvider);
 
+    // Register hover provider for inline vulnerability preview
+    const hoverProvider = new ScanaxHoverProvider(diagnosticManager['diagnosticCollection']);
+    context.subscriptions.push(
+        vscode.languages.registerHoverProvider({ scheme: 'file' }, hoverProvider)
+    );
+
+    // Show welcome page on first install
+    const config = vscode.workspace.getConfiguration('scanax');
+    const showWelcome = config.get<boolean>('showWelcome', true);
+    if (showWelcome) {
+        setTimeout(() => {
+            WelcomePanel.createOrShow(context.extensionUri);
+        }, 1000);
+    }
+
     let allVulnerabilities: any[] = [];
 
-    const applySurgicalFix = async (document: vscode.TextDocument, changes: any[]): Promise<boolean> => {
-    const edit = new vscode.WorkspaceEdit();
-    const fullCode = document.getText();
-    let applied = false;
-
-    for (const change of (changes || [])) {
-        // CLEANUP: Trim the AI input to prevent newline mismatches
-        const searchStr = change.search.trim();
-        const replaceStr = change.replace;
-
-        // Escape regex special characters and allow flexible whitespace matching
-        const escapedSearch = searchStr
-            .replace(/[.*+?^${}()|[\]\\]/g, '\\$&') 
-            .replace(/\s+/g, '\\s+');
-
-        const regex = new RegExp(escapedSearch, 'g');
-        const matches = [...fullCode.matchAll(regex)];
-
-        if (matches.length === 1) {
-            const match = matches[0];
-            const startPos = document.positionAt(match.index!);
-            const endPos = document.positionAt(match.index! + match[0].length);
+    const applySurgicalFix = async (document: vscode.TextDocument, fixedCode: string, lineNumber: number): Promise<boolean> => {
+        const edit = new vscode.WorkspaceEdit();
+        
+        try {
+            // Get the vulnerable line
+            const lineIdx = lineNumber - 1;
+            if (lineIdx < 0 || lineIdx >= document.lineCount) {
+                vscode.window.showErrorMessage(`Invalid line number: ${lineNumber}`);
+                return false;
+            }
             
-            // Apply the edit
-            edit.replace(document.uri, new vscode.Range(startPos, endPos), replaceStr);
-            applied = true;
-        } else if (matches.length > 1) {
-            vscode.window.showErrorMessage("Ambiguous match: Found multiple identical blocks. Please fix manually.");
-        } else {
-            // DEBUGGING: Very helpful for universal testing
-            console.log("Surgical Fix Failed. Looking for:", searchStr);
+            const line = document.lineAt(lineIdx);
+            const lineText = line.text;
+            
+            // Get the indentation from the original line
+            const indentMatch = lineText.match(/^(\s*)/);
+            const originalIndent = indentMatch ? indentMatch[1] : '';
+            
+            // Apply indentation to fixed code if it doesn't have it
+            let finalFixedCode = fixedCode;
+            if (!fixedCode.startsWith(originalIndent) && fixedCode.trim()) {
+                finalFixedCode = originalIndent + fixedCode.trim();
+            }
+            
+            // Replace the line
+            edit.replace(document.uri, line.range, finalFixedCode);
+            
+            const success = await vscode.workspace.applyEdit(edit);
+            if (success) {
+                await document.save();
+            }
+            return success;
+        } catch (err) {
+            console.error('Fix application error:', err);
+            return false;
         }
-    }
-
-    if (applied) {
-        const success = await vscode.workspace.applyEdit(edit);
-        if (success) {
-            await document.save();
-        }
-        return success;
-    }
-    return false;
-};
+    };
 
     const performScan = async (filesToScan: vscode.Uri[]): Promise<Map<string, any[]>> => {
         const config = vscode.workspace.getConfiguration('scanax');
@@ -138,10 +150,19 @@ export function activate(context: vscode.ExtensionContext) {
             try {
                 const document = await vscode.workspace.openTextDocument(fileUri);
                 const code = document.getText();
+                const totalLines = document.lineCount;
+                
                 // Skip empty files or massive files (> 1MB)
                 if (code.trim() && code.length < 1000000) {
                     const response = await sendCodeToScanaxBackend(code, userKey);
-                    const vulnerabilities = (response && response.errors) ? response.errors : [];
+                    let vulnerabilities = (response && response.errors) ? response.errors : [];
+                    
+                    // Validate line numbers against actual file
+                    vulnerabilities = vulnerabilities.filter((v: any) => {
+                        const line = v.line || 0;
+                        return line >= 1 && line <= totalLines;
+                    });
+                    
                     if (vulnerabilities.length > 0) {
                         scanResults.set(fileUri.toString(), vulnerabilities);
                     }
@@ -153,17 +174,46 @@ export function activate(context: vscode.ExtensionContext) {
 
     const runScanCommand = vscode.commands.registerCommand('scanax.runScan', async () => {
         const editor = vscode.window.activeTextEditor;
-        if (!editor) return;
+        if (!editor) {
+            vscode.window.showWarningMessage('No active file to scan');
+            return;
+        }
 
-        await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: "Scanax: Universal Analysis..." }, async () => {
+        await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: "Scanax: Scanning file..." }, async () => {
             try {
                 const config = vscode.workspace.getConfiguration('scanax');
                 const userKey = config.get<string>('provider') === 'Groq (Custom)' ? config.get<string>('customApiKey') : null;
                 const response = await sendCodeToScanaxBackend(editor.document.getText(), userKey);
                 const vulnerabilities = (response && response.errors) ? response.errors : [];
+                
+                // Set diagnostics for squiggly lines
                 diagnosticManager.setDiagnostics(editor.document, vulnerabilities);
-                vulnerabilityTreeProvider.refresh();
-            } catch (err) { vscode.window.showErrorMessage(`Scanax Error: ${err}`); }
+                
+                // Update tree view
+                const scanResults = new Map<string, any[]>();
+                if (vulnerabilities.length > 0) {
+                    scanResults.set(editor.document.uri.toString(), vulnerabilities);
+                }
+                vulnerabilityTreeProvider.setScanResults(scanResults);
+                
+                // Update panel
+                allVulnerabilities = vulnerabilities.map((v: any) => ({ 
+                    ...v, 
+                    file: editor.document.uri.fsPath, 
+                    fileUri: editor.document.uri 
+                }));
+                
+                VulnerabilityPanel.createOrShow(context.extensionUri);
+                if (VulnerabilityPanel.currentPanel) {
+                    VulnerabilityPanel.currentPanel.updateVulnerabilities(allVulnerabilities);
+                }
+                
+                if (vulnerabilities.length === 0) {
+                    vscode.window.showInformationMessage('✅ No vulnerabilities found in this file');
+                }
+            } catch (err) { 
+                vscode.window.showErrorMessage(`Scanax Error: ${err}`); 
+            }
         });
     });
 
@@ -188,62 +238,172 @@ export function activate(context: vscode.ExtensionContext) {
         });
     });
 
-    const fixVulnerabilityCommand = vscode.commands.registerCommand('scanax.fixVulnerability', async (vulnData: any) => {
-        const fileUri = vulnData.fileUri || vscode.Uri.file(vulnData.file);
-        if (!fileUri || !vulnData.line) return;
+    const getSuggestedFixCommand = vscode.commands.registerCommand('scanax.getSuggestedFix', async (vulnData: any) => {
+        try {
+            // Find the vulnerability in the allVulnerabilities array
+            const vuln = allVulnerabilities.find(v => v.file === vulnData.file && v.line === vulnData.line);
+            if (!vuln) {
+                vscode.window.showErrorMessage('Vulnerability not found.');
+                return;
+            }
 
-        await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: "Scanax: Applying Semantic Fix..." }, async () => {
-            try {
-                const config = vscode.workspace.getConfiguration('scanax');
-                const userKey = config.get<string>('provider') === 'Groq (Custom)' ? config.get<string>('customApiKey') : null;
-                const document = await vscode.workspace.openTextDocument(fileUri);
-                const response = await requestFix(document.getText(), vulnData.message, userKey, vulnData.line);
-                const success = await applySurgicalFix(document, response.changes);
+            // Get the document
+            const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(vuln.file));
+            const code = doc.getText();
 
-                if (success) {
-                    await document.save();
-                    if (VulnerabilityPanel.currentPanel) { VulnerabilityPanel.currentPanel.removeVulnerability(vulnData.file, vulnData.line); }
-                    allVulnerabilities = allVulnerabilities.filter(v => !(v.file === vulnData.file && v.line === vulnData.line));
-                    vscode.window.showInformationMessage('Universal fix applied!');
-                } else {
-                    vscode.window.showErrorMessage('Surgical fix failed: Pattern match not found.');
-                }
-            } catch (err) { vscode.window.showErrorMessage(`Fix error: ${err}`); }
-        });
+            const config = vscode.workspace.getConfiguration('scanax');
+            const userKey = config.get<string>('provider') === 'Groq (Custom)' ? config.get<string>('customApiKey') : null;
+            
+            const response = await vscode.window.withProgress({ 
+                location: vscode.ProgressLocation.Notification, 
+                title: "Getting suggestion..." 
+            }, async () => {
+                return await requestFix(code, vuln.message || vuln.title, userKey, vuln.line);
+            });
+            
+            // Update panel
+            if (VulnerabilityPanel.currentPanel) {
+                VulnerabilityPanel.currentPanel.updateVulnerabilityWithFix(
+                    vuln.file,
+                    vuln.line, 
+                    response.fixed_code,
+                    response.explanation
+                );
+            }
+        } catch (err: any) { 
+            vscode.window.showErrorMessage(`Failed: ${err?.message || err}`); 
+        }
     });
 
     const fixAllVulnerabilitiesCommand = vscode.commands.registerCommand('scanax.fixAllVulnerabilities', async () => {
-        if (allVulnerabilities.length === 0) return;
-        const confirm = await vscode.window.showWarningMessage(`Apply ${allVulnerabilities.length} universal fixes?`, { modal: true }, 'Confirm');
-        if (confirm !== 'Confirm') return;
-
-        await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: "Scanax: Bulk Fixing..." }, async () => {
-            const config = vscode.workspace.getConfiguration('scanax');
-            const userKey = config.get<string>('provider') === 'Groq (Custom)' ? config.get<string>('customApiKey') : null;
-            const grouped = allVulnerabilities.reduce((acc, v) => { acc[v.file] = acc[v.file] || []; acc[v.file].push(v); return acc; }, {} as any);
-
-            for (const filePath in grouped) {
-                const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(filePath));
-                const sortedVulns = grouped[filePath].sort((a: any, b: any) => b.line - a.line);
-                for (const vuln of sortedVulns) {
-                    try {
-                        const res = await requestFix(doc.getText(), vuln.message, userKey, vuln.line);
-                        await applySurgicalFix(doc, res.changes);
-                    } catch (e) { console.error(`Failed fix at ${filePath}:${vuln.line}`, e); }
-                }
-                await doc.save();
-            }
-            vscode.window.showInformationMessage('Bulk fix complete!');
-            await vscode.commands.executeCommand('scanax.workspaceScan');
-        });
+        if (allVulnerabilities.length === 0) {
+            vscode.window.showInformationMessage('No vulnerabilities to fix.');
+            return;
+        }
+        
+        vscode.window.showWarningMessage('Fix All feature temporarily disabled. Please use individual "Suggest Fix" for each vulnerability.');
+        return;
     });
 
     const scanNowCommand = vscode.commands.registerCommand('scanax.scanNow', () => vscode.commands.executeCommand('scanax.workspaceScan'));
     const openPanelCommand = vscode.commands.registerCommand('scanax.openPanel', () => VulnerabilityPanel.createOrShow(context.extensionUri));
     
+    const scanDependenciesCommand = vscode.commands.registerCommand('scanax.scanDependencies', async () => {
+        await vscode.window.withProgress({
+            location: vscode.ProgressLocation.Notification,
+            title: "Scanax: Scanning Dependencies..."
+        }, async () => {
+            try {
+                const config = vscode.workspace.getConfiguration('scanax');
+                const userKey = config.get<string>('provider') === 'Groq (Custom)' ? config.get<string>('customApiKey') : null;
+                
+                const results = await scanDependencies(userKey);
+                
+                if (results.vulnerabilities.length === 0) {
+                    vscode.window.showInformationMessage('✅ No dependency vulnerabilities found!');
+                } else {
+                    const total = results.vulnerabilities.length;
+                    const critical = results.vulnerabilities.filter((v: any) => v.severity === 'critical').length;
+                    const high = results.vulnerabilities.filter((v: any) => v.severity === 'high').length;
+                    
+                    vscode.window.showWarningMessage(
+                        `⚠️ Found ${total} dependency vulnerabilities (${critical} critical, ${high} high)`
+                    );
+                    
+                    // Show results in output channel
+                    const outputChannel = vscode.window.createOutputChannel('Scanax Dependencies');
+                    outputChannel.clear();
+                    outputChannel.appendLine('=== DEPENDENCY SCAN RESULTS ===\n');
+                    
+                    for (const vuln of results.vulnerabilities) {
+                        outputChannel.appendLine(`[${vuln.severity.toUpperCase()}] ${vuln.package}`);
+                        outputChannel.appendLine(`  Version: ${vuln.version}`);
+                        outputChannel.appendLine(`  Issue: ${vuln.message}`);
+                        if (vuln.cve) {
+                            outputChannel.appendLine(`  CVE: ${vuln.cve}`);
+                        }
+                        if (vuln.recommendation) {
+                            outputChannel.appendLine(`  Fix: ${vuln.recommendation}`);
+                        }
+                        outputChannel.appendLine('');
+                    }
+                    
+                    outputChannel.show();
+                }
+            } catch (err: any) {
+                vscode.window.showErrorMessage(`Dependency scan failed: ${err?.message || err}`);
+            }
+        });
+    });
+    
+    const welcomeCommand = vscode.commands.registerCommand('scanax.showWelcome', () => {
+        WelcomePanel.createOrShow(context.extensionUri);
+    });
+
+    const startTutorialCommand = vscode.commands.registerCommand('scanax.startTutorial', async () => {
+        const steps = [
+            { message: "Welcome to Scanax! Let's scan your first file.", action: null },
+            { message: "First, make sure the backend server is running at localhost:8000", action: null },
+            { message: "Now open any code file in your workspace", action: null },
+            { message: "Press Ctrl+Shift+S to scan the current file", action: 'scanax.runScan' },
+            { message: "Great! Check the Scanax sidebar for detected vulnerabilities", action: null },
+            { message: "Hover over any red squiggle to see vulnerability details", action: null },
+            { message: "Click 'Get Fix Suggestion' to get AI-powered fixes", action: null },
+            { message: "Tutorial complete! Happy secure coding! 🛡️", action: null }
+        ];
+
+        for (const step of steps) {
+            const choice = await vscode.window.showInformationMessage(
+                step.message,
+                { modal: false },
+                step.action ? 'Continue' : 'Next',
+                'Skip Tutorial'
+            );
+
+            if (choice === 'Skip Tutorial') {
+                break;
+            }
+
+            if (choice === 'Continue' && step.action) {
+                await vscode.commands.executeCommand(step.action);
+            }
+
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
+    });
+
+    const openSampleCodeCommand = vscode.commands.registerCommand('scanax.openSampleCode', async () => {
+        const choice = await vscode.window.showQuickPick(
+            [
+                { label: '$(file-code) JavaScript Sample', description: 'vulnerable-sample.js', file: 'vulnerable-sample.js' },
+                { label: '$(file-code) Python Sample', description: 'vulnerable-sample.py', file: 'vulnerable-sample.py' }
+            ],
+            { placeHolder: 'Choose a sample vulnerable file to open' }
+        );
+
+        if (choice) {
+            const samplePath = path.join(context.extensionPath, 'samples', choice.file);
+            try {
+                const doc = await vscode.workspace.openTextDocument(samplePath);
+                await vscode.window.showTextDocument(doc);
+                vscode.window.showInformationMessage(
+                    `Opened ${choice.file}. Press Ctrl+Shift+S to scan it!`,
+                    'Scan Now'
+                ).then(selection => {
+                    if (selection === 'Scan Now') {
+                        vscode.commands.executeCommand('scanax.runScan');
+                    }
+                });
+            } catch (err) {
+                vscode.window.showErrorMessage(`Could not open sample file: ${err}`);
+            }
+        }
+    });
+    
     context.subscriptions.push(
         runScanCommand, workspaceScanCommand, scanNowCommand, openPanelCommand,
-        fixVulnerabilityCommand, fixAllVulnerabilitiesCommand,
+        getSuggestedFixCommand, fixAllVulnerabilitiesCommand, scanDependenciesCommand,
+        welcomeCommand, startTutorialCommand, openSampleCodeCommand,
         // FIXED: plural 'registerCodeActionsProvider'
         vscode.languages.registerCodeActionsProvider({ scheme: 'file', language: '*' }, new ScanaxCodeActionProvider(), { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] }),
         vscode.workspace.onDidSaveTextDocument(doc => { vscode.commands.executeCommand('scanax.runScan'); }),

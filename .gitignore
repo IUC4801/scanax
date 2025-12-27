@@ -5,6 +5,13 @@ dist/
 *.vsix
 .vscode-test/
 
+# Python
+venv/
+env/
+ENV/
+*.pyc
+__pycache__/
+
 # Python Backend
 backend/.env
 backend/__pycache__/

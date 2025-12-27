@@ -1,28 +1,31 @@
 import fetch from 'node-fetch';
+import * as vscode from 'vscode';
 
 /**
- * Interface representing a surgical code change.
+ * Get the backend URL from configuration
  */
-export interface SurgicalChange {
-    search: string;
-    replace: string;
+function getBackendUrl(): string {
+    const config = vscode.workspace.getConfiguration('scanax');
+    return config.get<string>('backendUrl', 'http://localhost:8000').replace(/\/$/, ''); // Remove trailing slash
 }
 
 /**
  * Interface representing the backend response for a fix request.
  */
 export interface FixResponse {
-    changes: SurgicalChange[];
+    fixed_code: string;
+    explanation: string;
 }
 
 export async function sendCodeToScanaxBackend(code: string, userKey: string | null = null): Promise<any> {
     try {
+        const backendUrl = getBackendUrl();
         const body: any = { code };
         if (userKey) {
             body.user_key = userKey;
         }
 
-        const response = await fetch('http://localhost:8000/analyze', {
+        const response = await fetch(`${backendUrl}/analyze`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -52,6 +55,7 @@ export async function requestFix(
     vulnLine: number | null = null
 ): Promise<FixResponse> {
     try {
+        const backendUrl = getBackendUrl();
         const body: any = {
             original_code: code,
             vulnerability_description: vulnerability
@@ -64,7 +68,7 @@ export async function requestFix(
             body.vulnerability_line = vulnLine;
         }
 
-        const response = await fetch('http://localhost:8000/fix', {
+        const response = await fetch(`${backendUrl}/fix`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -83,5 +87,69 @@ export async function requestFix(
         return result as FixResponse;
     } catch (error) {
         throw new Error(`Failed to request fix from backend: ${error instanceof Error ? error.message : String(error)}`);
+    }
+}
+
+/**
+ * Scan dependencies for security vulnerabilities
+ */
+export async function scanDependencies(userKey: string | null = null): Promise<any> {
+    try {
+        const backendUrl = getBackendUrl();
+        const workspaceFolders = require('vscode').workspace.workspaceFolders;
+        if (!workspaceFolders || workspaceFolders.length === 0) {
+            throw new Error('No workspace folder open');
+        }
+
+        const fs = require('fs');
+        const path = require('path');
+        const vscode = require('vscode');
+        
+        const rootPath = workspaceFolders[0].uri.fsPath;
+        let dependencyContent = '';
+        
+        // Check for common dependency files
+        const depFiles = [
+            'package.json',
+            'requirements.txt', 
+            'go.mod',
+            'Gemfile',
+            'pom.xml',
+            'build.gradle'
+        ];
+        
+        for (const file of depFiles) {
+            const filePath = path.join(rootPath, file);
+            if (fs.existsSync(filePath)) {
+                dependencyContent = fs.readFileSync(filePath, 'utf8');
+                break;
+            }
+        }
+        
+        if (!dependencyContent) {
+            throw new Error('No dependency files found (package.json, requirements.txt, go.mod, etc.)');
+        }
+
+        const body: any = { code: dependencyContent };
+        if (userKey) {
+            body.user_key = userKey;
+        }
+
+        const response = await fetch(`${backendUrl}/scan-dependencies`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(body),
+        });
+
+        if (!response.ok) {
+            throw new Error(`Backend error: ${response.status}`);
+        }
+
+        const result = await response.json();
+        return result;
+    } catch (error) {
+        throw new Error(`Failed to scan dependencies: ${error instanceof Error ? error.message : String(error)}`);
     }
 }
