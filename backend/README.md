@@ -25,7 +25,7 @@ A FastAPI-based security code analyzer backend that uses Google's Gemini 1.5 Fla
 
 4. **Run the server:**
    ```bash
-   python3 main.py
+   python3.12 main.py
    ```
    
    The server will start on `http://localhost:8000`

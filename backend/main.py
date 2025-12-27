@@ -2,6 +2,7 @@ import os
 import json
 import logging
 import hashlib
+import re
 from datetime import datetime, timedelta
 from fastapi import FastAPI, HTTPException, Request
 from groq import Groq
@@ -15,7 +16,7 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ScanaxGroqOnly")
 
-app = FastAPI(title="Scanax Groq-Powered Security (BYOK)")
+app = FastAPI(title="Scanax Professional Security (BYOK)")
 
 # ============================================
 # Configuration
@@ -24,13 +25,8 @@ GLOBAL_GROQ_KEY = os.getenv("GROQ_API_KEY")
 if not GLOBAL_GROQ_KEY:
     raise ValueError("GROQ_API_KEY not found in .env file")
 
-MODEL_ID = "llama-3.3-70b-versatile"
-
-# ============================================
-# Rate Limiting & Caching
-# ============================================
-analysis_cache = {}  
-CACHE_TTL_MINUTES = int(os.getenv("CACHE_TTL_MINUTES", "60"))
+# Using Llama 3.1 8B for high-speed and strict instruction following
+MODEL_ID = "llama-3.1-8b-instant"
 
 # ============================================
 # Data Models
@@ -45,14 +41,6 @@ class FixRequest(BaseModel):
     user_key: str | None = None
     vulnerability_line: int | None = None
 
-class Vulnerability(BaseModel):
-    line: int
-    message: str
-    fix: str
-
-class AnalysisResponse(BaseModel):
-    errors: list[Vulnerability]
-
 class SurgicalChange(BaseModel):
     search: str
     replace: str
@@ -61,136 +49,100 @@ class SurgicalFixResponse(BaseModel):
     changes: list[SurgicalChange]
 
 # ============================================
-# Helper Functions
+# Professional Prompts
 # ============================================
 
-def get_code_hash(code: str) -> str:
-    return hashlib.sha256(code.encode()).hexdigest()
-
-def is_cached(code_hash: str) -> bool:
-    if code_hash not in analysis_cache:
-        return False
-    cached_time = analysis_cache[code_hash]["timestamp"]
-    if datetime.now() - cached_time > timedelta(minutes=CACHE_TTL_MINUTES):
-        del analysis_cache[code_hash]
-        return False
-    return True
-
-def get_cached_result(code_hash: str):
-    if is_cached(code_hash):
-        return analysis_cache[code_hash]["result"]
-    return None
-
-def cache_result(code_hash: str, result):
-    analysis_cache[code_hash] = {
-        "result": result,
-        "timestamp": datetime.now()
-    }
-
-# ============================================
-# Prompts
-# ============================================
-
+# Note: Added 'json' to satisfy Groq's response_format requirements
 SYSTEM_PROMPT_ANALYZE = """
-ACT AS A SENIOR SECURITY ENGINEER.
-Analyze code for vulnerabilities (SQLi, XSS, etc.).
-OUTPUT RULES:
-1. Return ONLY valid JSON.
-2. Object must have key "errors" containing an array.
-3. Each error has: "line" (int), "message" (string), "fix" (string).
+ACT AS A STATIC ANALYSIS ENGINE (CODEQL STYLE).
+Identify security vulnerabilities. Output the results in valid JSON format only.
+Structure: {"errors": [{"line": int, "message": string, "fix": string}]}
 """
 
 SYSTEM_PROMPT_FIX = """
-ACT AS A SENIOR SECURITY ENGINEER.
-Provide a SURGICAL fix for the security vulnerability.
+ACT AS A PRECISION CODE REPAIR ENGINE.
+Output the result in valid JSON format only.
 
-RULES:
-1. Return ONLY valid JSON.
-2. The JSON must have a "changes" key containing an array of objects.
-3. Each object must have "search" (the exact vulnerable snippet) and "replace" (the fixed version).
-4. The "search" string MUST exist EXACTLY as-is in the provided code (including indentation).
-5. Only include the minimal code block needed for the fix.
-6. If the fix requires a new import, add a separate change object for it.
+STRATEGY: SURGICAL SNIPPET REPLACEMENT
+1. Identify the specific lines of code that constitute the 'Sink' (vulnerability).
+2. The "search" string MUST be an EXACT, literal copy of the vulnerable lines from the user's input, including the leading indentation and any comments on those lines.
+3. The "replace" string MUST contain the corrected version of ONLY those lines.
+4. Do NOT include surrounding function definitions or imports UNLESS they are part of the specific lines being fixed.
+5. If a new import is required (e.g., 'import subprocess'), include it at the top of the "replace" string.
 
-FORMAT EXAMPLE:
+REQUIRED JSON STRUCTURE:
 {
-  "changes": [
-    {
-      "search": "db.query('SELECT * FROM users WHERE id = ' + id)",
-      "replace": "db.query('SELECT * FROM users WHERE id = ?', [id])"
-    }
-  ]
+  "search": "exact_original_snippet",
+  "replace": "exact_fixed_snippet"
 }
 """
 
-@app.post("/analyze", response_model=AnalysisResponse)
+# ============================================
+# Endpoints
+# ============================================
+
+@app.post("/analyze")
 async def analyze_code(request_obj: Request, body: CodeAnalysisRequest):
-    client_ip = request_obj.client.host if request_obj.client else "unknown"
     if not body.code.strip():
-        return AnalysisResponse(errors=[])
-    
-    code_hash = get_code_hash(body.code)
-    cached_result = get_cached_result(code_hash)
-    if cached_result is not None:
-        return AnalysisResponse(errors=cached_result)
+        return {"errors": []}
     
     api_key = body.user_key if body.user_key else GLOBAL_GROQ_KEY
-    
     try:
         groq_client = Groq(api_key=api_key)
         completion = groq_client.chat.completions.create(
             model=MODEL_ID,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT_ANALYZE},
-                {"role": "user", "content": f"Analyze this code:\n\n{body.code}"}
+                {"role": "user", "content": f"Analyze this code and return json results:\n{body.code}"}
             ],
             response_format={"type": "json_object"},
-            temperature=0.2,
+            temperature=0.0, 
         )
-
-        result = json.loads(completion.choices[0].message.content)
-        vulnerabilities = [Vulnerability(**e) for e in result.get("errors", [])]
-        cache_result(code_hash, vulnerabilities)
-        return AnalysisResponse(errors=vulnerabilities)
-
+        return json.loads(completion.choices[0].message.content)
     except Exception as e:
-        logger.error(f"Analysis failed: {str(e)}")
+        logger.error(f"Analysis Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/fix", response_model=SurgicalFixResponse)
 async def fix_vulnerability(request_obj: Request, body: FixRequest):
-    """Generates a surgical search-and-replace fix instead of a full file replacement."""
     if not body.original_code.strip():
         return SurgicalFixResponse(changes=[])
     
     api_key = body.user_key if body.user_key else GLOBAL_GROQ_KEY
+    groq_client = Groq(api_key=api_key)
     
     try:
-        groq_client = Groq(api_key=api_key)
-        
-        line_ctx = f" (specifically around line {body.vulnerability_line})" if body.vulnerability_line else ""
-        user_message = f"Vulnerability: {body.vulnerability_description}{line_ctx}\n\nCode:\n{body.original_code}"
-        
+        # Request a Semantic Block Patch
         completion = groq_client.chat.completions.create(
             model=MODEL_ID,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT_FIX},
-                {"role": "user", "content": user_message}
+                {"role": "user", "content": f"Provide a fix in json format for this vulnerability: {body.vulnerability_description}\n\nCode Context:\n{body.original_code}"}
             ],
             response_format={"type": "json_object"},
-            temperature=0.1,
+            temperature=0.0,
         )
 
-        result = json.loads(completion.choices[0].message.content)
-        return SurgicalFixResponse(changes=result.get("changes", []))
+        raw_content = completion.choices[0].message.content
+        # Regex cleanup for extra safety against markdown formatting
+        clean_json = re.sub(r'^```json\s*|```$', '', raw_content.strip(), flags=re.MULTILINE)
+        result = json.loads(clean_json)
+
+        # Normalize logic: Professional tools handle varied response shapes
+        changes = []
+        if isinstance(result, dict):
+            if "changes" in result:
+                changes = result["changes"]
+            elif "search" in result and "replace" in result:
+                # Map the single object response to our list-based response model
+                changes = [{"search": result["search"], "replace": result["replace"]}]
+
+        logger.info(f"Generated semantic patch for: {body.vulnerability_description}")
+        return SurgicalFixResponse(changes=changes)
 
     except Exception as e:
-        logger.error(f"Fix generation failed: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/health")
-async def health():
-    return {"status": "active", "byok_enabled": True}
+        logger.error(f"Autofix Error: {e}")
+        raise HTTPException(status_code=500, detail=f"Semantic Patch Failed: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
