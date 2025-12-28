@@ -1,17 +1,85 @@
-# 🛡️ Scanax Security Scanner
+# Scanax Security Scanner
 
-> **AI-Powered Security Vulnerability Detection for VS Code**
+Advanced static analysis and AI-powered security vulnerability detection for Visual Studio Code. Scanax combines pattern-based static analysis with Llama 3.1 large language model inference to identify security vulnerabilities, code quality issues, and compliance violations across multiple programming languages.
 
-Scanax is an intelligent security scanner that uses AI to detect vulnerabilities, secrets, and security issues in your code in real-time. Get instant feedback with CWE references, CVSS scores, and automated fix suggestions.
+## Overview
 
-[![VS Code Marketplace](https://img.shields.io/badge/VS%20Code-Marketplace-blue)](https://marketplace.visualstudio.com/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+Scanax provides comprehensive security scanning capabilities for JavaScript, TypeScript, Python, C#, Java, Go, PHP, Ruby, and C/C++ codebases. The extension performs real-time vulnerability detection as you write code, with support for both single-file analysis and workspace-wide scanning. All vulnerabilities are classified according to industry standards including CWE (Common Weakness Enumeration), CVE (Common Vulnerabilities and Exposures), and OWASP Top 10:2021.
 
----
+## Technical Capabilities
 
-## ✨ Features
+### Static Analysis Engine
+- 36+ pre-defined vulnerability detection patterns using regex-based matching
+- Support for SQL injection, cross-site scripting, command injection, insecure deserialization, secrets exposure, path traversal, XML external entities, server-side request forgery, and cryptographic weaknesses
+- Language-specific pattern recognition for JavaScript/TypeScript eval usage, Python pickle deserialization, C# BinaryFormatter vulnerabilities, Java ObjectInputStream risks, and PHP superglobal handling
+- Comment-aware scanning that excludes false positives from code comments
 
-### 🔍 **Real-Time Security Scanning**
+### AI-Powered Analysis
+- Integration with Groq API using Llama 3.1-8b-instant model for contextual vulnerability analysis
+- Automated fix generation with explanation of security remediation steps
+- Fallback to static analysis when backend connectivity is unavailable
+- Configurable retry logic with exponential backoff for API resilience
+
+### Data Flow Analysis
+- Taint tracking for user input sources including HTTP request parameters, command-line arguments, environment variables, and file system inputs
+- Multi-hop data flow analysis tracking variable assignments, function calls, and string concatenation operations
+- Detection of tainted data reaching dangerous sinks such as database queries, system commands, and code evaluation functions
+- Interprocedural analysis with support for tracking data flow across function boundaries
+
+### Cross-File Analysis
+- Workspace-wide dependency graph construction
+- Detection of insecure function exports used in multiple modules
+- Identification of circular dependencies and architectural vulnerabilities
+- Analysis of data flow between modules with vulnerability propagation tracking
+
+### Dependency Scanning
+- Integration with Open Source Vulnerabilities (OSV) database for real-time CVE lookup
+- Support for npm packages via package.json and Python packages via requirements.txt
+- CVSS score reporting and fixed version recommendations
+- Caching layer to minimize redundant API calls with 1-hour TTL
+
+### Compliance Reporting
+- OWASP Top 10:2021 categorization with percentage distribution analysis
+- CWE coverage reporting with severity classification
+- PCI-DSS and SOC 2 compliance recommendations
+- HTML report generation with compliance scoring and remediation priorities
+- Exportable audit trails for security review processes
+
+### Developer Experience Features
+- Real-time scanning with 1-second debounce to minimize performance impact
+- Configurable toggle for enabling or disabling live vulnerability detection
+- File hash-based caching system providing 99% faster rescans for unchanged files
+- Support for .scanaxignore files using glob patterns for false positive suppression
+- Inline ignore comments (scanax-ignore, scanax-ignore-next-line)
+- False positive reporting mechanism with backend telemetry
+- VS Code diagnostic integration with Problems panel display
+- Code action provider for quick fix application
+- Hover tooltips with detailed vulnerability information including CWE references and remediation guidance
+
+### Backend Architecture
+- FastAPI-based REST API with CORS support for remote deployment
+- Stateless request handling with no persistent storage requirements
+- Health check endpoint for monitoring and uptime verification
+- Bring-your-own-key (BYOK) model supporting custom Groq API credentials
+- Exponential backoff retry mechanism for transient failures
+- Rate limiting awareness with graceful degradation
+
+## Language Support Matrix
+
+| Language | Injection | XSS | Deserialization | Secrets | Crypto | Path Traversal | Command Injection |
+|----------|-----------|-----|-----------------|---------|--------|----------------|-------------------|
+| JavaScript/TypeScript | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Python | ✓ | - | ✓ | ✓ | ✓ | ✓ | ✓ |
+| C# | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Java | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Go | ✓ | - | - | ✓ | ✓ | - | ✓ |
+| PHP | ✓ | ✓ | - | ✓ | - | ✓ | ✓ |
+| Ruby | ✓ | - | ✓ | ✓ | - | - | ✓ |
+| C/C++ | - | - | - | - | - | - | ✓ |
+
+## Features
+
+### Real-Time Security Scanning
 - Scans your code as you type or on-demand
 - Detects SQL Injection, XSS, Command Injection, and 50+ vulnerability types
 - Inline diagnostics with red squiggles

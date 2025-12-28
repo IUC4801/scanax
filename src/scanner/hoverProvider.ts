@@ -29,22 +29,25 @@ export class ScanaxHoverProvider implements vscode.HoverProvider {
             // Parse the diagnostic data (stored in relatedInformation)
             const vulnData = this.parseVulnerabilityData(diagnostic);
 
-            // Build rich hover content
-            markdown.appendMarkdown(`### ${vulnData.title || 'Security Vulnerability'}\n\n`);
+            // Build rich hover content with clean formatting
+            markdown.appendMarkdown(`### 🛡️ Security Vulnerability\n\n`);
             
-            if (vulnData.severity) {
-                const severityColor = this.getSeverityColor(vulnData.severity);
-                markdown.appendMarkdown(`**Severity:** \`${vulnData.severity.toUpperCase()}\` `);
+            // Priority: CVSS Score first, then severity
+            if (vulnData.score || vulnData.severity) {
                 if (vulnData.score) {
-                    markdown.appendMarkdown(`| **Score:** ${vulnData.score}/10`);
+                    markdown.appendMarkdown(`**CVSS Score:** \`${vulnData.score}/10\` `);
+                }
+                if (vulnData.severity) {
+                    markdown.appendMarkdown(`| **Severity:** \`${vulnData.severity.toUpperCase()}\``);
                 }
                 markdown.appendMarkdown('\n\n');
             }
 
+            // Issue message - don't repeat the title
             markdown.appendMarkdown(`**Issue:** ${diagnostic.message}\n\n`);
 
             if (vulnData.description) {
-                markdown.appendMarkdown(`**Description:**\n${vulnData.description}\n\n`);
+                markdown.appendMarkdown(`**Description:** ${vulnData.description}\n\n`);
             }
 
             if (vulnData.category) {
@@ -56,7 +59,9 @@ export class ScanaxHoverProvider implements vscode.HoverProvider {
             }
 
             if (vulnData.recommendation) {
-                markdown.appendMarkdown(`**Recommendation:**\n${vulnData.recommendation}\n\n`);
+                // Clean up recommendation text (remove numbering artifacts)
+                const cleanRec = vulnData.recommendation.replace(/,\d+\./g, '\n-');
+                markdown.appendMarkdown(`**Recommendation:**\n${cleanRec}\n\n`);
             }
 
             if (vulnData.fix) {

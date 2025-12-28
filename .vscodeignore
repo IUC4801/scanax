@@ -13,6 +13,5 @@ scanax-tests/**
 node_modules/**
 .env
 *.log
-FEATURES.md
 resources/ICON-README.md
 resources/*.svg

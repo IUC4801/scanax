@@ -1,7 +1,7 @@
 {
   "name": "scanax",
   "displayName": "Scanax Security Scanner",
-  "description": "AI-powered security vulnerability scanner with real-time detection and automated fix suggestions",
+  "description": "Advanced static analysis and AI-powered security vulnerability detection with real-time scanning, CWE/CVE classification, and automated fix generation",
   "version": "0.0.1",
   "publisher": "Ayushi Chaudhuri",
   "icon": "resources/icon.png",
@@ -48,7 +48,7 @@
         {
           "id": "scanax-sidebar",
           "title": "Scanax",
-          "icon": "$(shield)"
+          "icon": "resources/icon.png"
         }
       ]
     },
@@ -116,6 +116,30 @@
         "title": "Scanax: Open Sample Vulnerable Code",
         "category": "Scanax",
         "icon": "$(file-code)"
+      },
+      {
+        "command": "scanax.reportFalsePositive",
+        "title": "Scanax: Report False Positive",
+        "category": "Scanax",
+        "icon": "$(report)"
+      },
+      {
+        "command": "scanax.createIgnoreFile",
+        "title": "Scanax: Create .scanaxignore File",
+        "category": "Scanax",
+        "icon": "$(file-add)"
+      },
+      {
+        "command": "scanax.clearCache",
+        "title": "Scanax: Clear Scan Cache",
+        "category": "Scanax",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "scanax.checkBackendHealth",
+        "title": "Scanax: Check Backend Health",
+        "category": "Scanax",
+        "icon": "$(pulse)"
       }
     ],
     "menus": {

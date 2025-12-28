@@ -42,9 +42,12 @@ export class DiagnosticManager {
             const line = document.lineAt(Math.min(lineIdx, document.lineCount - 1));
             const range = new vscode.Range(line.range.start, line.range.end);
 
+            // Create concise message - just the issue without repeating metadata
+            const cleanMessage = vuln.message || vuln.title || "Security issue detected";
+            
             const diagnostic: ScanaxDiagnostic = new vscode.Diagnostic(
                 range,
-                vuln.message || vuln.title || "Security issue detected",
+                cleanMessage,
                 vscode.DiagnosticSeverity.Error
             );
 

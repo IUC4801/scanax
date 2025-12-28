@@ -1,11 +1,16 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { sendCodeToScanaxBackend, requestFix, scanDependencies } from './services/apiService';
+import { sendCodeToScanaxBackend, requestFix, scanDependencies, reportFalsePositive, NetworkError, BackendError, ApiKeyError } from './services/apiService';
 import { DiagnosticManager } from './scanner/diagnosticManager';
 import { ScanaxCodeActionProvider } from './scanner/codeActionProvider';
 import { ScanaxHoverProvider } from './scanner/hoverProvider';
 import { VulnerabilityPanel } from './webview/panel';
 import { WelcomePanel } from './webview/welcomePanel';
+import { CacheManager } from './scanner/cacheManager';
+import { StaticAnalyzer } from './scanner/staticAnalyzer';
+import { IgnoreManager } from './scanner/ignoreManager';
+import { BackendHealthChecker } from './services/healthChecker';
+import { ApiKeyManager } from './services/apiKeyManager';
 
 // Tree item for file vulnerabilities
 class VulnerabilityTreeItem extends vscode.TreeItem {
@@ -79,12 +84,41 @@ class VulnerabilityTreeProvider implements vscode.TreeDataProvider<Vulnerability
 
 let diagnosticManager: DiagnosticManager;
 let vulnerabilityTreeProvider: VulnerabilityTreeProvider;
+let cacheManager: CacheManager;
+let staticAnalyzer: StaticAnalyzer;
+let ignoreManager: IgnoreManager;
+let debounceTimer: NodeJS.Timeout | undefined;
+let realTimeScanEnabled: boolean = false;
+let healthChecker: BackendHealthChecker;
 
 export function activate(context: vscode.ExtensionContext) {
     diagnosticManager = new DiagnosticManager();
     vulnerabilityTreeProvider = new VulnerabilityTreeProvider();
+    cacheManager = new CacheManager();
+    staticAnalyzer = new StaticAnalyzer();
+    ignoreManager = new IgnoreManager();
+    healthChecker = new BackendHealthChecker();
 
     vscode.window.registerTreeDataProvider('scanax.securityDashboard', vulnerabilityTreeProvider);
+
+    // Check if first-time user and show setup wizard
+    const config = vscode.workspace.getConfiguration('scanax');
+    const hasSeenSetup = context.globalState.get<boolean>('hasSeenSetup', false);
+    const isSetupComplete = ApiKeyManager.isSetupComplete();
+    
+    // Always show wizard if setup incomplete OR first time
+    if (!hasSeenSetup || !isSetupComplete) {
+        setTimeout(async () => {
+            const setupComplete = await ApiKeyManager.showSetupWizard();
+            if (setupComplete) {
+                await context.globalState.update('hasSeenSetup', true);
+            }
+        }, 1000); // Show faster - 1 second
+    }
+
+    // Start backend health monitoring
+    const backendUrl = config.get<string>('backendUrl', 'https://scanax-backend.onrender.com');
+    healthChecker.start(backendUrl);
 
     // Register hover provider for inline vulnerability preview
     const hoverProvider = new ScanaxHoverProvider(diagnosticManager['diagnosticCollection']);
@@ -92,14 +126,12 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.languages.registerHoverProvider({ scheme: 'file' }, hoverProvider)
     );
 
-    // Show welcome page on first install
-    const config = vscode.workspace.getConfiguration('scanax');
-    const showWelcome = config.get<boolean>('showWelcome', true);
-    if (showWelcome) {
-        setTimeout(() => {
-            WelcomePanel.createOrShow(context.extensionUri);
-        }, 1000);
-    }
+    // Watch for .scanaxignore changes
+    const ignoreFileWatcher = vscode.workspace.createFileSystemWatcher('**/.scanaxignore');
+    ignoreFileWatcher.onDidChange(() => ignoreManager.reload());
+    ignoreFileWatcher.onDidCreate(() => ignoreManager.reload());
+    ignoreFileWatcher.onDidDelete(() => ignoreManager.reload());
+    context.subscriptions.push(ignoreFileWatcher);
 
     let allVulnerabilities: any[] = [];
 
@@ -141,34 +173,87 @@ export function activate(context: vscode.ExtensionContext) {
         }
     };
 
-    const performScan = async (filesToScan: vscode.Uri[]): Promise<Map<string, any[]>> => {
+    const performScan = async (filesToScan: vscode.Uri[], progress?: vscode.Progress<{ message?: string; increment?: number }>): Promise<Map<string, any[]>> => {
         const config = vscode.workspace.getConfiguration('scanax');
         const userKey = config.get<string>('provider') === 'Groq (Custom)' ? config.get<string>('customApiKey') : null;
 
         const scanResults = new Map<string, any[]>();
-        for (const fileUri of filesToScan) {
-            try {
-                const document = await vscode.workspace.openTextDocument(fileUri);
-                const code = document.getText();
-                const totalLines = document.lineCount;
-                
-                // Skip empty files or massive files (> 1MB)
-                if (code.trim() && code.length < 1000000) {
-                    const response = await sendCodeToScanaxBackend(code, userKey);
-                    let vulnerabilities = (response && response.errors) ? response.errors : [];
+        const totalFiles = filesToScan.length;
+        let scannedFiles = 0;
+
+        // Process files in parallel batches of 5
+        const batchSize = 5;
+        for (let i = 0; i < filesToScan.length; i += batchSize) {
+            const batch = filesToScan.slice(i, Math.min(i + batchSize, filesToScan.length));
+            
+            await Promise.all(batch.map(async (fileUri) => {
+                try {
+                    const document = await vscode.workspace.openTextDocument(fileUri);
+                    const code = document.getText();
+                    const totalLines = document.lineCount;
                     
-                    // Validate line numbers against actual file
-                    vulnerabilities = vulnerabilities.filter((v: any) => {
-                        const line = v.line || 0;
-                        return line >= 1 && line <= totalLines;
-                    });
+                    // Skip empty files, massive files (> 1MB), or ignored files
+                    if (!code.trim() || code.length >= 1000000 || ignoreManager.isFileIgnored(fileUri.fsPath)) {
+                        return;
+                    }
+
+                    let vulnerabilities: any[] = [];
+
+                    // Check cache first
+                    const cached = cacheManager.getCachedResult(fileUri.toString(), code);
+                    if (cached !== null) {
+                        vulnerabilities = cached;
+                    } else {
+                        // Use static analysis first for quick wins
+                        if (staticAnalyzer.shouldUseStaticAnalysis(document)) {
+                            const staticVulns = staticAnalyzer.scan(document);
+                            vulnerabilities.push(...staticVulns);
+                        }
+
+                        // Then do LLM scan for deeper analysis
+                        try {
+                            const response = await sendCodeToScanaxBackend(code, userKey);
+                            const llmVulns = (response && response.errors) ? response.errors : [];
+                            vulnerabilities.push(...llmVulns);
+                        } catch (err) {
+                            // If LLM fails, at least we have static analysis results
+                            if (err instanceof NetworkError || err instanceof BackendError) {
+                                console.log('LLM scan failed, using static analysis only:', err.message);
+                            } else {
+                                throw err;
+                            }
+                        }
+
+                        // Validate line numbers against actual file
+                        vulnerabilities = vulnerabilities.filter((v: any) => {
+                            const line = v.line || 0;
+                            return line >= 1 && line <= totalLines;
+                        });
+
+                        // Apply ignore rules
+                        vulnerabilities = ignoreManager.filterIgnored(document, vulnerabilities);
+
+                        // Cache the results
+                        cacheManager.setCachedResult(fileUri.toString(), code, vulnerabilities);
+                    }
                     
                     if (vulnerabilities.length > 0) {
                         scanResults.set(fileUri.toString(), vulnerabilities);
                     }
+                } catch (err) { 
+                    console.error(`Error scanning file ${fileUri.fsPath}:`, err); 
                 }
-            } catch (err) { console.error(`Error scanning file ${fileUri.fsPath}:`, err); }
+                
+                scannedFiles++;
+                if (progress) {
+                    progress.report({ 
+                        message: `Scanning... ${scannedFiles}/${totalFiles} files`,
+                        increment: (100 / totalFiles)
+                    });
+                }
+            }));
         }
+        
         return scanResults;
     };
 
@@ -179,28 +264,76 @@ export function activate(context: vscode.ExtensionContext) {
             return;
         }
 
-        await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: "Scanax: Scanning file..." }, async () => {
+        await vscode.window.withProgress({ 
+            location: vscode.ProgressLocation.Notification, 
+            title: "Scanax: Scanning file..." 
+        }, async (progress) => {
             try {
-                const config = vscode.workspace.getConfiguration('scanax');
-                const userKey = config.get<string>('provider') === 'Groq (Custom)' ? config.get<string>('customApiKey') : null;
-                const response = await sendCodeToScanaxBackend(editor.document.getText(), userKey);
-                const vulnerabilities = (response && response.errors) ? response.errors : [];
+                progress.report({ message: "Analyzing code..." });
+                
+                const document = editor.document;
+                const code = document.getText();
+                
+                // Check cache first
+                let vulnerabilities: any[] = [];
+                const cached = cacheManager.getCachedResult(document.uri.toString(), code);
+                
+                if (cached !== null) {
+                    vulnerabilities = cached;
+                    progress.report({ message: "Using cached results..." });
+                } else {
+                    // Static analysis
+                    if (staticAnalyzer.shouldUseStaticAnalysis(document)) {
+                        progress.report({ message: "Running static analysis..." });
+                        const staticVulns = staticAnalyzer.scan(document);
+                        vulnerabilities.push(...staticVulns);
+                    }
+
+                    // LLM analysis
+                    progress.report({ message: "Running AI analysis..." });
+                    const config = vscode.workspace.getConfiguration('scanax');
+                    const userKey = config.get<string>('provider') === 'Groq (Custom)' ? config.get<string>('customApiKey') : null;
+                    
+                    try {
+                        const response = await sendCodeToScanaxBackend(code, userKey);
+                        const llmVulns = (response && response.errors) ? response.errors : [];
+                        vulnerabilities.push(...llmVulns);
+                    } catch (err) {
+                        if (err instanceof ApiKeyError) {
+                            vscode.window.showErrorMessage(`API Key Error: ${err.message}`);
+                            return;
+                        } else if (err instanceof BackendError) {
+                            vscode.window.showErrorMessage(`Backend Error: ${err.message}`);
+                            return;
+                        } else if (err instanceof NetworkError) {
+                            vscode.window.showErrorMessage(`Network Error: ${err.message}`);
+                            return;
+                        }
+                        throw err;
+                    }
+
+                    // Apply ignore rules
+                    vulnerabilities = ignoreManager.filterIgnored(document, vulnerabilities);
+                    
+                    // Cache results
+                    cacheManager.setCachedResult(document.uri.toString(), code, vulnerabilities);
+                }
                 
                 // Set diagnostics for squiggly lines
-                diagnosticManager.setDiagnostics(editor.document, vulnerabilities);
+                diagnosticManager.setDiagnostics(document, vulnerabilities);
                 
                 // Update tree view
                 const scanResults = new Map<string, any[]>();
                 if (vulnerabilities.length > 0) {
-                    scanResults.set(editor.document.uri.toString(), vulnerabilities);
+                    scanResults.set(document.uri.toString(), vulnerabilities);
                 }
                 vulnerabilityTreeProvider.setScanResults(scanResults);
                 
                 // Update panel
                 allVulnerabilities = vulnerabilities.map((v: any) => ({ 
                     ...v, 
-                    file: editor.document.uri.fsPath, 
-                    fileUri: editor.document.uri 
+                    file: document.uri.fsPath, 
+                    fileUri: document.uri 
                 }));
                 
                 VulnerabilityPanel.createOrShow(context.extensionUri);
@@ -210,18 +343,31 @@ export function activate(context: vscode.ExtensionContext) {
                 
                 if (vulnerabilities.length === 0) {
                     vscode.window.showInformationMessage('✅ No vulnerabilities found in this file');
+                } else {
+                    vscode.window.showInformationMessage(`🛡️ Found ${vulnerabilities.length} potential issue(s)`);
                 }
-            } catch (err) { 
-                vscode.window.showErrorMessage(`Scanax Error: ${err}`); 
+            } catch (err: any) { 
+                vscode.window.showErrorMessage(`Scanax Error: ${err?.message || err}`); 
             }
         });
     });
 
     const workspaceScanCommand = vscode.commands.registerCommand('scanax.workspaceScan', async () => {
-        await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: "Scanax: Full Universal Workspace Scan..." }, async () => {
+        await vscode.window.withProgress({ 
+            location: vscode.ProgressLocation.Notification, 
+            title: "Scanax: Workspace Scan", 
+            cancellable: false 
+        }, async (progress) => {
             try {
-                const allFiles = await vscode.workspace.findFiles('**/*', '{**/node_modules/**,**/bin/**,**/obj/**,**/.git/**,**/dist/**,**/build/**}');
-                const scanResults = await performScan(allFiles);
+                progress.report({ message: "Finding files...", increment: 0 });
+                const allFiles = await vscode.workspace.findFiles(
+                    '**/*.{js,ts,jsx,tsx,py,java,go,php,rb,c,cpp,cs}', 
+                    '{**/node_modules/**,**/bin/**,**/obj/**,**/.git/**,**/dist/**,**/build/**,**/out/**,**/vendor/**}'
+                );
+                
+                progress.report({ message: `Scanning ${allFiles.length} files...` });
+                const scanResults = await performScan(allFiles, progress);
+                
                 vulnerabilityTreeProvider.setScanResults(scanResults);
                 
                 allVulnerabilities = [];
@@ -233,8 +379,23 @@ export function activate(context: vscode.ExtensionContext) {
                 }
                 
                 VulnerabilityPanel.createOrShow(context.extensionUri);
-                if (VulnerabilityPanel.currentPanel) { VulnerabilityPanel.currentPanel.updateVulnerabilities(allVulnerabilities); }
-            } catch (err) { vscode.window.showErrorMessage(`Scanax Error: ${err}`); }
+                if (VulnerabilityPanel.currentPanel) { 
+                    VulnerabilityPanel.currentPanel.updateVulnerabilities(allVulnerabilities); 
+                }
+
+                const totalVulns = allVulnerabilities.length;
+                if (totalVulns === 0) {
+                    vscode.window.showInformationMessage(`✅ Workspace scan complete: No vulnerabilities found!`);
+                } else {
+                    const critical = allVulnerabilities.filter(v => v.severity === 'critical').length;
+                    const high = allVulnerabilities.filter(v => v.severity === 'high').length;
+                    vscode.window.showWarningMessage(
+                        `🛡️ Scan complete: ${totalVulns} issues found (${critical} critical, ${high} high)`
+                    );
+                }
+            } catch (err: any) { 
+                vscode.window.showErrorMessage(`Scanax Error: ${err?.message || err}`); 
+            }
         });
     });
 
@@ -400,10 +561,100 @@ export function activate(context: vscode.ExtensionContext) {
         }
     });
     
+    // Debounced real-time scanning on type
+    const debouncedScan = async (document: vscode.TextDocument) => {
+        // Check if real-time scanning is enabled
+        if (!realTimeScanEnabled) {
+            return;
+        }
+
+        if (debounceTimer) {
+            clearTimeout(debounceTimer);
+        }
+
+        debounceTimer = setTimeout(async () => {
+            try {
+                const code = document.getText();
+                
+                // Quick static analysis only for real-time
+                if (staticAnalyzer.shouldUseStaticAnalysis(document)) {
+                    let vulnerabilities = staticAnalyzer.scan(document);
+                    vulnerabilities = ignoreManager.filterIgnored(document, vulnerabilities);
+                    diagnosticManager.setDiagnostics(document, vulnerabilities);
+                }
+            } catch (err) {
+                console.error('Debounced scan error:', err);
+            }
+        }, 1000); // 1 second debounce
+    };
+
+    // Report false positive command
+    const reportFalsePositiveCommand = vscode.commands.registerCommand('scanax.reportFalsePositive', async (vulnData: any) => {
+        const reason = await vscode.window.showInputBox({
+            prompt: 'Why is this a false positive? (optional)',
+            placeHolder: 'This is not vulnerable because...'
+        });
+
+        if (reason !== undefined) { // User didn't cancel
+            try {
+                const config = vscode.workspace.getConfiguration('scanax');
+                const userKey = config.get<string>('provider') === 'Groq (Custom)' ? config.get<string>('customApiKey') : null;
+                
+                const vuln = allVulnerabilities.find(v => 
+                    v.file === vulnData.file && v.line === vulnData.line
+                );
+
+                if (vuln) {
+                    const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(vuln.file));
+                    await reportFalsePositive(doc.getText(), vuln, reason || 'No reason provided', userKey);
+                    vscode.window.showInformationMessage('Thank you for your feedback! This will help improve Scanax.');
+                }
+            } catch (err) {
+                console.error('Error reporting false positive:', err);
+            }
+        }
+    });
+
+    // Create .scanaxignore file command
+    const createIgnoreFileCommand = vscode.commands.registerCommand('scanax.createIgnoreFile', async () => {
+        await ignoreManager.createSampleIgnoreFile();
+    });
+
+    // Clear cache command
+    const clearCacheCommand = vscode.commands.registerCommand('scanax.clearCache', () => {
+        cacheManager.clearAll();
+        vscode.window.showInformationMessage('Scanax cache cleared!');
+    });
+
+    // Set real-time scan state command
+    const setRealTimeScanCommand = vscode.commands.registerCommand('scanax.setRealTimeScan', (enabled: boolean) => {
+        realTimeScanEnabled = enabled;
+        const status = enabled ? 'enabled' : 'disabled';
+        vscode.window.showInformationMessage(`Real-time scanning ${status}`);
+    });
+
+    // Backend health check command
+    const checkHealthCommand = vscode.commands.registerCommand('scanax.checkBackendHealth', async () => {
+        const config = vscode.workspace.getConfiguration('scanax');
+        const backendUrl = config.get<string>('backendUrl', 'https://scanax-backend.onrender.com');
+        await healthChecker.checkHealth(backendUrl);
+    });
+
+    // Listen for text changes (debounced scanning)
+    context.subscriptions.push(
+        vscode.workspace.onDidChangeTextDocument(event => {
+            if (event.document.uri.scheme === 'file') {
+                debouncedScan(event.document);
+            }
+        })
+    );
+    
     context.subscriptions.push(
         runScanCommand, workspaceScanCommand, scanNowCommand, openPanelCommand,
         getSuggestedFixCommand, fixAllVulnerabilitiesCommand, scanDependenciesCommand,
         welcomeCommand, startTutorialCommand, openSampleCodeCommand,
+        reportFalsePositiveCommand, createIgnoreFileCommand, clearCacheCommand, setRealTimeScanCommand,
+        checkHealthCommand,
         // FIXED: plural 'registerCodeActionsProvider'
         vscode.languages.registerCodeActionsProvider({ scheme: 'file', language: '*' }, new ScanaxCodeActionProvider(), { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] }),
         vscode.workspace.onDidSaveTextDocument(doc => { vscode.commands.executeCommand('scanax.runScan'); }),
@@ -411,4 +662,14 @@ export function activate(context: vscode.ExtensionContext) {
     );
 }
 
-export function deactivate() { if (diagnosticManager) diagnosticManager.dispose(); }
+export function deactivate() { 
+    if (diagnosticManager) {
+        diagnosticManager.dispose();
+    }
+    if (healthChecker) {
+        healthChecker.dispose();
+    }
+    if (debounceTimer) {
+        clearTimeout(debounceTimer);
+    }
+}
