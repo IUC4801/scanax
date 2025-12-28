@@ -29,6 +29,22 @@ app.add_middleware(
 )
 
 # ============================================
+# Root Health Check
+# ============================================
+
+@app.get("/")
+async def root_health_check():
+    """
+    Standard health check for UptimeRobot and Render. 
+    Returns 200 OK to keep the service awake.
+    """
+    return {
+        "status": "online",
+        "service": "Scanax Professional Backend",
+        "timestamp": datetime.now().isoformat()
+    }
+
+# ============================================
 # Configuration
 # ============================================
 GLOBAL_GROQ_KEY = os.getenv("GROQ_API_KEY")

@@ -168,7 +168,7 @@
         },
         "scanax.backendUrl": {
           "type": "string",
-          "default": "http://localhost:8000",
+          "default": "https://scanax-backend.onrender.com",
           "description": "Scanax backend API URL",
           "markdownDescription": "Backend server URL. Use `http://localhost:8000` for local or your deployed URL (e.g., `https://scanax-backend.onrender.com`)"
         }
