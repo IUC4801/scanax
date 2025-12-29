@@ -56,13 +56,30 @@ Scanax performs real-time security analysis as you code, detecting SQL injection
 
 ## Screenshots
 
-Security Dashboard: Main vulnerability panel showing detected issues with severity badges, CWE references, and fix suggestions.
+### API Key Configuration
+Setup view showing how to configure your own Groq API key or use the default free backend.
 
-Inline Detection: Vulnerable code is marked directly in your editor with diagnostic squiggles.
+![API Key Setup](resources/screenshots/firstimage.png)
 
-Hover Tooltips: Hover over vulnerabilities to see complete details without leaving your code.
+### Security Dashboard
+Main vulnerability panel showing detected issues with severity badges, CWE references, and fix suggestions.
 
-AI Fix Suggestions: Get intelligent, context-aware code fixes powered by AI.
+![Security Dashboard](resources/screenshots/thirdimage.png)
+
+### Inline Detection
+Vulnerable code is marked directly in your editor with diagnostic squiggles.
+
+![Inline Detection](resources/screenshots/thirdimage.png)
+
+### Hover Tooltips
+Hover over vulnerabilities to see complete details without leaving your code.
+
+![Hover Tooltip](resources/screenshots/fifthimage.png)
+
+### AI Fix Suggestions
+Get intelligent, context-aware code fixes powered by AI.
+
+![AI Fix Suggestion](resources/screenshots/forthimage.png)
 
 ---
 
@@ -72,6 +89,8 @@ AI Fix Suggestions: Get intelligent, context-aware code fixes powered by AI.
 - VS Code 1.75.0 or higher
 - Optional: Groq API key from https://console.groq.com/keys
 - Backend server (can use free default or deploy your own)
+
+> **Privacy Notice**: Scanax sends code snippets to external APIs for analysis. See our [Privacy Policy](PRIVACY.md) for details on data handling, third-party services, and your rights under GDPR/CCPA.
 
 ### Installation
 
@@ -166,17 +185,43 @@ This extension contributes the following settings:
 - `POST /scan-dependencies` - Scan dependencies for CVEs
 
 ### Privacy & Security
-- Code is sent to Groq API for analysis
-- API keys stored securely in VS Code
-- No code stored on servers
+- Code is sent to Groq API for analysis (see [Privacy Policy](PRIVACY.md))
+- API keys stored locally in VS Code settings
+- No code stored on backend servers
 - All processing is stateless
+- Full transparency: [Open source on GitHub](https://github.com/IUC4801/scanax)
 
 ---
 
 ## Known Issues
 
-- Large files (>1MB) are skipped
-- Some language-specific checks may have false positives
+- Large files (>1MB) are skipped to prevent performance issues
+- Some language-specific checks may have false positives (use "Report False Positive" feature)
+- Backend may take 30-60 seconds to wake up on first request (free tier)
+
+---
+
+## Troubleshooting
+
+### Backend Connection Issues
+- **Error**: "Cannot connect to backend"
+- **Solution**: Wait 30-60 seconds for backend to wake up, then retry
+- **Alternative**: Configure custom backend URL in settings
+
+### No Vulnerabilities Detected
+- Ensure file is saved (scan on save must be enabled)
+- Check supported file types: .js, .ts, .py, .cs, .java, .go, .php, .rb, .c, .cpp
+- Verify real-time scanning is enabled in settings
+
+### API Key Validation Failed
+- Verify Groq API key is valid at https://console.groq.com/keys
+- Check internet connectivity
+- Try using "Default (Free)" provider instead
+
+### Performance Issues
+- Use `.scanaxignore` file to exclude large directories (node_modules, dist, build)
+- Disable real-time scanning for very large projects
+- Clear scan cache: Run command "Scanax: Clear Scan Cache"
 
 ---
 
@@ -204,11 +249,24 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## Support
+## Support & Resources
 
 - **Issues**: [GitHub Issues](https://github.com/IUC4801/scanax/issues)
-- **Documentation**: [Full Docs](https://github.com/IUC4801/scanax/wiki)
-- **Email**: ayushichaudhuri50@gmail.com
+- **Privacy Policy**: [PRIVACY.md](PRIVACY.md)
+- **Documentation**: [GitHub Wiki](https://github.com/IUC4801/scanax/wiki)
+- **Changelog**: [CHANGELOG.md](CHANGELOG.md)
+- **Source Code**: [GitHub Repository](https://github.com/IUC4801/scanax)
+- **Publisher**: [Ayushi Chaudhuri](https://marketplace.visualstudio.com/publishers/AyushiChaudhuri)
+
+---
+
+## About the Publisher
+
+**Publisher**: Ayushi Chaudhuri  
+**Marketplace ID**: AyushiChaudhuri  
+**GitHub**: [@IUC4801](https://github.com/IUC4801)  
+
+Scanax is built & maintained by an independent developer passionate about making security tooling accessible to all developers. Built with ❤️ for the developer community.
 
 ---
 

@@ -2,8 +2,8 @@
   "name": "scanax",
   "displayName": "Scanax Security Scanner",
   "description": "Advanced static analysis and AI-powered security vulnerability detection with real-time scanning, CWE/CVE classification, and automated fix generation",
-  "version": "0.0.1",
-  "publisher": "Ayushi Chaudhuri",
+  "version": "1.0.0",
+  "publisher": "AyushiChaudhuri",
   "icon": "resources/encrypted.png",
   "repository": {
     "type": "git",

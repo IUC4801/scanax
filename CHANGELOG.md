@@ -5,34 +5,72 @@ All notable changes to the Scanax Security Scanner extension will be documented 
 ## [0.0.1] - 2025-01-01
 
 ### Added
-- Initial release of Scanax Security Scanner
-- Real-time security vulnerability scanning for 9 programming languages
-- AI-powered fix suggestions using Llama 3.1
-- Sidebar setup view with API key validation
-- Backend validation endpoint integration
-- Support for any LLM provider (Groq, OpenAI, Anthropic)
-- Secrets and PII detection (API keys, passwords, tokens)
-- Dependency vulnerability scanning with CVE detection
-- CWE references and CVSS severity scoring
-- Rich hover tooltips with detailed vulnerability information
-- Inline diagnostics in Problems panel
-- Workspace-wide security scanning
-- File-level security scanning
-- Keyboard shortcuts (Ctrl+Shift+S, Ctrl+Shift+W, Ctrl+Shift+V)
-- Progressive disclosure UX (setup view, then dashboard)
-- Custom diagnostic manager for brief tooltips
-- Custom hover provider for detailed vulnerability information
-- False positive infrastructure (storage and filtering)
-- Real-time scanning toggle
-- Support for 50+ vulnerability types including:
-  - SQL Injection
-  - Cross-Site Scripting (XSS)
-  - Command Injection
-  - Path Traversal
-  - Insecure Deserialization
+- **Initial release** of Scanax Security Scanner
+- **Real-time security vulnerability scanning** for 9 programming languages:
+  - JavaScript, TypeScript, Python, C#, Java, Go, PHP, Ruby, C/C++
+- **36+ vulnerability detection patterns** including:
+  - SQL Injection (7 variants)
+  - Cross-Site Scripting (XSS) - Reflected, Stored, DOM-based
+  - Command Injection (OS command execution)
+  - Path Traversal / Directory Traversal
+  - Insecure Deserialization (eval, pickle, unserialize)
   - XML External Entities (XXE)
-  - Cryptographic Weaknesses
-  - SSRF and more
+  - Cryptographic Weaknesses (weak algorithms, hardcoded keys)
+  - Server-Side Request Forgery (SSRF)
+  - Prototype Pollution (JavaScript)
+  - LDAP Injection, XPath Injection, NoSQL Injection
+  - Open Redirect, CRLF Injection
+  - Buffer Overflow indicators
+- **AI-powered fix suggestions** using Llama 3.1 (via Groq API)
+  - One-click vulnerability remediation
+  - Context-aware secure code generation
+  - Explanation of security issues
+- **Secrets and PII detection**:
+  - API keys (AWS, Google, Stripe, etc.)
+  - Passwords, tokens, private keys
+  - SSH keys, database credentials
+  - Social Security Numbers (SSN)
+  - Credit card numbers, email addresses
+- **Dependency vulnerability scanning**:
+  - Automatic detection of vulnerable packages
+  - Integration with OSV database for CVE lookup
+  - Support for package.json, requirements.txt, pom.xml, Gemfile, go.mod
+  - Version upgrade recommendations
+- **Advanced analysis features**:
+  - Taint tracking across variable assignments
+  - Cross-file analysis and import tracking
+  - Control flow analysis
+  - Data flow tracking for injection vulnerabilities
+- **Compliance and standards**:
+  - CWE (Common Weakness Enumeration) references for all findings
+  - CVSS severity scoring (0.0-10.0)
+  - OWASP Top 10:2021 categorization
+  - Clickable documentation links
+- **Developer experience**:
+  - Inline diagnostics in VS Code Problems panel
+  - Rich hover tooltips with detailed vulnerability information
+  - Separate diagnostic manager for concise inline messages
+  - Custom hover provider for comprehensive details
+  - Code actions and quick fixes
+  - Progressive disclosure UX (setup view → dashboard)
+- **Workspace features**:
+  - File-level security scanning (Ctrl+Shift+S)
+  - Workspace-wide security scanning (Ctrl+Shift+W)
+  - Scan on save (configurable)
+  - Real-time scanning toggle
+  - Cache management for performance
+- **UI components**:
+  - Activity bar sidebar with shield icon
+  - Welcome/setup view with API key validation
+  - Security dashboard tree view
+  - Vulnerability panel with detailed reports
+  - False positive reporting interface
+- **Configuration options**:
+  - Provider selection (Default/Groq/Custom)
+  - Custom API key support
+  - Backend URL configuration
+  - Real-time scanning toggle
+  - Ignore file support (.scanaxignore)
 
 ### Fixed
 - Extension loading issue (corrected main entry point path)
@@ -381,5 +419,3 @@ The implementation:
 - Provides clean, intuitive UI
 - Scales well with BYOK model
 - Fully documented and tested
-
-**Ready to merge and deploy.** 🚀
