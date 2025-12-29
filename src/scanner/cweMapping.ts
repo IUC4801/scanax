@@ -160,6 +160,14 @@ export const CWE_MAPPINGS: Record<string, VulnerabilityClassification> = {
         severity: 'HIGH',
         description: 'Use of MD5, SHA1, or other weak algorithms'
     },
+    'Weak Cryptography': {
+        cwe: 'CWE-327',
+        cweName: 'Use of a Broken or Risky Cryptographic Algorithm',
+        owaspTop10: 'A02:2021',
+        owaspCategory: 'Cryptographic Failures',
+        severity: 'HIGH',
+        description: 'Use of MD5, SHA1, or other weak algorithms'
+    },
     'Weak Random Number Generator': {
         cwe: 'CWE-338',
         cweName: 'Use of Cryptographically Weak PRNG',
@@ -204,6 +212,14 @@ export const CWE_MAPPINGS: Record<string, VulnerabilityClassification> = {
         severity: 'HIGH',
         description: 'Improper Restriction of XML External Entity Reference'
     },
+    'XXE': {
+        cwe: 'CWE-611',
+        cweName: 'XML External Entity Reference',
+        owaspTop10: 'A05:2021',
+        owaspCategory: 'Security Misconfiguration',
+        severity: 'HIGH',
+        description: 'Improper Restriction of XML External Entity Reference'
+    },
 
     // Deserialization
     'Insecure Deserialization': {
@@ -217,6 +233,14 @@ export const CWE_MAPPINGS: Record<string, VulnerabilityClassification> = {
 
     // SSRF
     'Server-Side Request Forgery (SSRF)': {
+        cwe: 'CWE-918',
+        cweName: 'Server-Side Request Forgery',
+        owaspTop10: 'A10:2021',
+        owaspCategory: 'Server-Side Request Forgery',
+        severity: 'HIGH',
+        description: 'Application fetches remote resources without validating URL'
+    },
+    'SSRF': {
         cwe: 'CWE-918',
         cweName: 'Server-Side Request Forgery',
         owaspTop10: 'A10:2021',

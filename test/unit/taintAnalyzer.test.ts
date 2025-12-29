@@ -23,7 +23,7 @@ db.query(query);
             lineCount: 3
         } as any;
 
-        const vulnerabilities = analyzer.analyzeTaint(mockDocument);
+        const vulnerabilities = analyzer.analyze(mockDocument);
         
         assert.ok(vulnerabilities.length > 0, 'Should detect taint vulnerability');
         const sqlTaint = vulnerabilities.find(v => v.sink === 'sql');
@@ -43,10 +43,10 @@ os.system(user_input)
             lineCount: 2
         } as any;
 
-        const vulnerabilities = analyzer.analyzeTaint(mockDocument);
+        const vulnerabilities = analyzer.analyze(mockDocument);
         
         assert.ok(vulnerabilities.length > 0);
-        const cmdTaint = vulnerabilities.find(v => v.sink === 'command');
+        const cmdTaint = vulnerabilities.find((v: any) => v.sink === 'command');
         assert.ok(cmdTaint, 'Should detect command injection sink');
     });
 
@@ -63,7 +63,7 @@ eval(userCode);
             lineCount: 2
         } as any;
 
-        const vulnerabilities = analyzer.analyzeTaint(mockDocument);
+        const vulnerabilities = analyzer.analyze(mockDocument);
         
         const evalTaint = vulnerabilities.find(v => v.sink === 'eval');
         assert.ok(evalTaint, 'Should detect eval sink');
@@ -84,7 +84,7 @@ const html = "<div>" + sanitized + "</div>";
             lineCount: 3
         } as any;
 
-        const vulnerabilities = analyzer.analyzeTaint(mockDocument);
+        const vulnerabilities = analyzer.analyze(mockDocument);
         
         // Should have fewer or less severe vulnerabilities after sanitization
         // The actual behavior depends on implementation details
@@ -106,7 +106,7 @@ db.execute(query);
             lineCount: 4
         } as any;
 
-        const vulnerabilities = analyzer.analyzeTaint(mockDocument);
+        const vulnerabilities = analyzer.analyze(mockDocument);
         
         assert.ok(vulnerabilities.length > 0);
         const taint = vulnerabilities[0];
@@ -126,7 +126,7 @@ fs.readFile(filename, callback);
             lineCount: 2
         } as any;
 
-        const vulnerabilities = analyzer.analyzeTaint(mockDocument);
+        const vulnerabilities = analyzer.analyze(mockDocument);
         
         const fileTaint = vulnerabilities.find(v => v.sink === 'file');
         assert.ok(fileTaint, 'Should detect file system sink');
@@ -146,7 +146,7 @@ console.log(y);
             lineCount: 3
         } as any;
 
-        const vulnerabilities = analyzer.analyzeTaint(mockDocument);
+        const vulnerabilities = analyzer.analyze(mockDocument);
         
         assert.strictEqual(vulnerabilities.length, 0);
     });

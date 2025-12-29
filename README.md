@@ -1,161 +1,77 @@
 # Scanax Security Scanner
 
-Advanced static analysis and AI-powered security vulnerability detection for Visual Studio Code. Scanax combines pattern-based static analysis with Llama 3.1 large language model inference to identify security vulnerabilities, code quality issues, and compliance violations across multiple programming languages.
+Advanced security vulnerability scanner for Visual Studio Code. Scanax provides AI-powered vulnerability detection with automated fix suggestions for JavaScript, TypeScript, Python, C#, Java, Go, PHP, Ruby, and C/C++.
 
 ## Overview
 
-Scanax provides comprehensive security scanning capabilities for JavaScript, TypeScript, Python, C#, Java, Go, PHP, Ruby, and C/C++ codebases. The extension performs real-time vulnerability detection as you write code, with support for both single-file analysis and workspace-wide scanning. All vulnerabilities are classified according to industry standards including CWE (Common Weakness Enumeration), CVE (Common Vulnerabilities and Exposures), and OWASP Top 10:2021.
+Scanax performs real-time security analysis as you code, detecting SQL injection, XSS, command injection, secrets exposure, and 50+ vulnerability types. All findings are classified using CWE, CVE, and OWASP standards with CVSS scoring.
 
-## Technical Capabilities
+## Features
 
-### Static Analysis Engine
-- 36+ pre-defined vulnerability detection patterns using regex-based matching
-- Support for SQL injection, cross-site scripting, command injection, insecure deserialization, secrets exposure, path traversal, XML external entities, server-side request forgery, and cryptographic weaknesses
-- Language-specific pattern recognition for JavaScript/TypeScript eval usage, Python pickle deserialization, C# BinaryFormatter vulnerabilities, Java ObjectInputStream risks, and PHP superglobal handling
-- Comment-aware scanning that excludes false positives from code comments
+### Real-Time Security Scanning
+- Detects SQL injection, XSS, command injection, and 50+ vulnerability types
+- Inline diagnostics with quick-fix suggestions
+- Workspace-wide security analysis
+- File-level and project-level scanning
 
-### AI-Powered Analysis
-- Integration with Groq API using Llama 3.1-8b-instant model for contextual vulnerability analysis
-- Automated fix generation with explanation of security remediation steps
-- Fallback to static analysis when backend connectivity is unavailable
-- Configurable retry logic with exponential backoff for API resilience
+### AI-Powered Fix Suggestions
+- Intelligent code fixes powered by Llama 3.1
+- One-click vulnerability remediation
+- Contextual security recommendations
 
-### Data Flow Analysis
-- Taint tracking for user input sources including HTTP request parameters, command-line arguments, environment variables, and file system inputs
-- Multi-hop data flow analysis tracking variable assignments, function calls, and string concatenation operations
-- Detection of tainted data reaching dangerous sinks such as database queries, system commands, and code evaluation functions
-- Interprocedural analysis with support for tracking data flow across function boundaries
+### Secrets Detection
+- Identifies hardcoded API keys, passwords, and tokens
+- Detects AWS credentials, private keys, and connection strings
+- Flags PII exposure including SSN and credit card numbers
 
-### Cross-File Analysis
-- Workspace-wide dependency graph construction
-- Detection of insecure function exports used in multiple modules
-- Identification of circular dependencies and architectural vulnerabilities
-- Analysis of data flow between modules with vulnerability propagation tracking
+### Dependency Vulnerability Scanner
+- Scans package.json, requirements.txt, and other dependency files
+- Integrates with OSV database for CVE detection
+- Provides version upgrade recommendations
 
-### Dependency Scanning
-- Integration with Open Source Vulnerabilities (OSV) database for real-time CVE lookup
-- Support for npm packages via package.json and Python packages via requirements.txt
-- CVSS score reporting and fixed version recommendations
-- Caching layer to minimize redundant API calls with 1-hour TTL
-
-### Compliance Reporting
-- OWASP Top 10:2021 categorization with percentage distribution analysis
-- CWE coverage reporting with severity classification
-- PCI-DSS and SOC 2 compliance recommendations
-- HTML report generation with compliance scoring and remediation priorities
-- Exportable audit trails for security review processes
-
-### Developer Experience Features
-- Real-time scanning with 1-second debounce to minimize performance impact
-- Configurable toggle for enabling or disabling live vulnerability detection
-- File hash-based caching system providing 99% faster rescans for unchanged files
-- Support for .scanaxignore files using glob patterns for false positive suppression
-- Inline ignore comments (scanax-ignore, scanax-ignore-next-line)
-- False positive reporting mechanism with backend telemetry
-- VS Code diagnostic integration with Problems panel display
-- Code action provider for quick fix application
-- Hover tooltips with detailed vulnerability information including CWE references and remediation guidance
-
-### Backend Architecture
-- FastAPI-based REST API with CORS support for remote deployment
-- Stateless request handling with no persistent storage requirements
-- Health check endpoint for monitoring and uptime verification
-- Bring-your-own-key (BYOK) model supporting custom Groq API credentials
-- Exponential backoff retry mechanism for transient failures
-- Rate limiting awareness with graceful degradation
+### Standards Compliance
+- CWE references for all vulnerabilities
+- CVSS severity scoring (0.0-10.0)
+- OWASP Top 10:2021 categorization
+- Clickable links to vulnerability documentation
 
 ## Language Support Matrix
 
 | Language | Injection | XSS | Deserialization | Secrets | Crypto | Path Traversal | Command Injection |
 |----------|-----------|-----|-----------------|---------|--------|----------------|-------------------|
-| JavaScript/TypeScript | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Python | ✓ | - | ✓ | ✓ | ✓ | ✓ | ✓ |
-| C# | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Java | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Go | ✓ | - | - | ✓ | ✓ | - | ✓ |
-| PHP | ✓ | ✓ | - | ✓ | - | ✓ | ✓ |
-| Ruby | ✓ | - | ✓ | ✓ | - | - | ✓ |
-| C/C++ | - | - | - | - | - | - | ✓ |
+| JavaScript/TypeScript | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
+| Python | Yes | No | Yes | Yes | Yes | Yes | Yes |
+| C# | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
+| Java | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
+| Go | Yes | No | No | Yes | Yes | No | Yes |
+| PHP | Yes | Yes | No | Yes | No | Yes | Yes |
+| Ruby | Yes | No | Yes | Yes | No | No | Yes |
+| C/C++ | No | No | No | No | No | No | Yes |
 
-## Features
+## Keyboard Shortcuts
 
-### Real-Time Security Scanning
-- Scans your code as you type or on-demand
-- Detects SQL Injection, XSS, Command Injection, and 50+ vulnerability types
-- Inline diagnostics with red squiggles
-- Workspace-wide security analysis
+- Ctrl+Shift+S - Scan current file
+- Ctrl+Shift+W - Scan entire workspace
+- Ctrl+Shift+V - Open vulnerability panel
 
-### 🤖 **AI-Powered Fix Suggestions**
-- Get intelligent code fixes for detected vulnerabilities
-- One-click apply with "Get Fix Suggestion" button
-- Contextual recommendations with step-by-step guidance
+## Screenshots
 
-### 🔐 **Secret & PII Detection**
-- Automatically detects hardcoded API keys, passwords, and tokens
-- Flags AWS credentials, private keys, and database connection strings
-- Identifies PII exposure (SSN, credit cards, emails)
+Security Dashboard: Main vulnerability panel showing detected issues with severity badges, CWE references, and fix suggestions.
 
-### 📦 **Dependency Vulnerability Scanner**
-- Scans `package.json`, `requirements.txt`, `go.mod`, and more
-- Detects known CVEs in your dependencies
-- Provides version upgrade recommendations
+Inline Detection: Vulnerable code is marked directly in your editor with diagnostic squiggles.
 
-### 🏷️ **CWE References & CVSS Scoring**
-- Every vulnerability tagged with CWE ID (e.g., CWE-89)
-- CVSS-style severity scores (0.0-10.0)
-- Clickable links to MITRE CWE documentation
+Hover Tooltips: Hover over vulnerabilities to see complete details without leaving your code.
 
-### 💡 **Rich Hover Tooltips**
-- Hover over vulnerabilities to see complete details
-- View issue, category, CWE, description, and fix—all inline
-- No need to switch between panels
-
-### ⌨️ **Keyboard Shortcuts**
-- `Ctrl+Shift+S` - Scan current file
-- `Ctrl+Shift+W` - Scan entire workspace
-- `Ctrl+Shift+V` - Open vulnerability panel
-
-### 🌐 **Multi-Language Support**
-- **JavaScript/TypeScript** - Prototype pollution, eval() detection
-- **Python** - Django/Flask misconfigurations, pickle vulnerabilities
-- **Go** - Race conditions, goroutine leaks
-- **Java** - XXE, LDAP injection
-- **PHP** - File inclusion, type juggling
+AI Fix Suggestions: Get intelligent, context-aware code fixes powered by AI.
 
 ---
 
-## 📸 Screenshots
-
-### Security Dashboard
-![Scanax Dashboard](https://via.placeholder.com/800x500?text=Scanax+Dashboard+Screenshot)
-
-*The main vulnerability panel showing detected issues with severity badges, CWE references, and fix suggestions*
-
-### Inline Detection
-![Inline Detection](https://via.placeholder.com/800x400?text=Inline+Vulnerability+Detection)
-
-*Red squiggles mark vulnerable code directly in your editor*
-
-### Hover Tooltip
-![Hover Tooltip](https://via.placeholder.com/600x400?text=Rich+Hover+Tooltip)
-
-*Hover over vulnerabilities to see complete details without leaving your code*
-
-### AI Fix Suggestions
-![Fix Suggestions](https://via.placeholder.com/700x400?text=AI+Fix+Suggestions)
-
-*Get intelligent, context-aware code fixes powered by AI*
-
----
-
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
-- **VS Code** 1.75.0 or higher
-- **Groq API Key** ([Get free key](https://console.groq.com/keys))
-- **Backend Server** - Choose one:
-  - Option 1: Deploy to free hosting (Render, Railway, Fly.io) - **Recommended**
-  - Option 2: Run locally (requires Python 3.12+)
+- VS Code 1.75.0 or higher
+- Optional: Groq API key from https://console.groq.com/keys
+- Backend server (can use free default or deploy your own)
 
 ### Installation
 
@@ -165,76 +81,23 @@ Scanax provides comprehensive security scanning capabilities for JavaScript, Typ
    - Search for "Scanax Security Scanner"
    - Click Install
 
-2. **Deploy Backend (Recommended)** 🚀
-   
-   **Quick Deploy to Render.com (100% FREE):**
-   
-   ```bash
-   # 1. Push backend to GitHub
-   cd backend
-   git init
-   git add .
-   git commit -m "Deploy Scanax backend"
-   git push
-   
-   # 2. Go to https://render.com
-   # 3. Click "New +" → "Web Service"
-   # 4. Connect your repo, set:
-   #    - Build: pip install -r requirements.txt
-   #    - Start: uvicorn main:app --host 0.0.0.0 --port $PORT
-   #    - Add env var: GROQ_API_KEY=your_key
-   # 5. Deploy!
-   ```
-   
-   ✅ Your backend will be at: `https://scanax-backend-XXXX.onrender.com`
-   
-   **Alternative Options:**
-   - Railway.app ($5/month free credit)
-   - Fly.io (generous free tier)
-   - Google Cloud Run (2M requests/month free)
-   
-   📖 **Full deployment guide:** See `backend/DEPLOYMENT.md`
+2. Configure Extension
+   - Open the Scanax sidebar on first launch
+   - Choose "Use Default Key" to use free backend, or enter your own Groq API key
+   - Configuration is saved automatically after validation
 
-3. **Configure Extension**
-   - Open VS Code Settings (`Ctrl+,`)
-   - Search for "Scanax Backend URL"
-   - Enter your deployed URL: `https://your-backend-url.onrender.com`
-   - Alternatively, search for "Scanax" and set your Groq API key
 
-### Option B: Run Backend Locally
-
-Only if you prefer local development:
-   ```bash
-   # Clone or navigate to scanax/backend directory
-   cd backend
-   
-   # Install dependencies
-   pip install -r requirements.txt
-   
-   # Create .env file with your API key
-   echo "GROQ_API_KEY=your_api_key_here" > .env
-   
-   # Start the backend server
-   python3.12 main.py
-   ```
-
-3. **Configure Extension (Optional)**
-   - Open VS Code Settings (`Ctrl+,`)
-   - Search for "Scanax"
-   - Choose your AI provider (Default or Custom Groq)
-   - Add your custom API key if needed
 
 ### Quick Start
 
-1. **Scan a File**: Press `Ctrl+Shift+S` or run command "Scanax: Run Security Scan"
-2. **Scan Workspace**: Press `Ctrl+Shift+W` or run command "Scanax: Workspace-wide Security Scan"
-3. **View Results**: Check the Scanax sidebar or Problems panel
-4. **Get Fix**: Click "Get Fix Suggestion" button on any vulnerability
-5. **Scan Dependencies**: Run command "Scanax: Scan Dependencies for Vulnerabilities"
+1. Scan a File: Press Ctrl+Shift+S or run command "Scanax: Run Security Scan"
+2. Scan Workspace: Press Ctrl+Shift+W or run command "Scanax: Workspace-wide Security Scan"
+3. View Results: Check the Scanax sidebar or Problems panel
+4. Get Fix: Click "Get Fix Suggestion" button on any vulnerability
 
 ---
 
-## 🎯 Use Cases
+## Use Cases
 
 ### For Developers
 - Catch security issues before code review
@@ -253,7 +116,7 @@ Only if you prefer local development:
 
 ---
 
-## 📋 Detected Vulnerability Types
+## Detected Vulnerability Types
 
 | Category | Examples |
 |----------|----------|
@@ -269,7 +132,7 @@ Only if you prefer local development:
 
 ---
 
-## ⚙️ Extension Settings
+## Extension Settings
 
 This extension contributes the following settings:
 
@@ -278,7 +141,7 @@ This extension contributes the following settings:
 
 ---
 
-## 🔧 Commands
+## Commands
 
 | Command | Description | Shortcut |
 |---------|-------------|----------|
@@ -289,7 +152,7 @@ This extension contributes the following settings:
 
 ---
 
-## 📊 Technical Details
+## Technical Details
 
 ### Architecture
 - **Frontend**: VS Code Extension (TypeScript)
@@ -310,42 +173,22 @@ This extension contributes the following settings:
 
 ---
 
-## 🐛 Known Issues
+## Known Issues
 
-- Backend must be running manually on `localhost:8000`
 - Large files (>1MB) are skipped
 - Some language-specific checks may have false positives
 
 ---
 
-## 🗺️ Roadmap
+## Release Notes
 
-- [ ] Auto-start backend
-- [ ] Export reports (PDF, SARIF)
-- [ ] CI/CD integration templates
-- [ ] Historical vulnerability tracking
-- [ ] Team collaboration features
-- [ ] Compliance reporting (OWASP, PCI-DSS)
+### 0.0.1
+
+Initial release with real-time security scanning, AI-powered fix suggestions, secrets detection, CWE references, CVSS scoring, and multi-language support.
 
 ---
 
-## 📝 Release Notes
-
-### 0.0.1 (Initial Release)
-
-**Features:**
-- Real-time security vulnerability scanning
-- AI-powered fix suggestions
-- Secret and PII detection
-- Dependency vulnerability scanning
-- CWE references and CVSS scoring
-- Rich hover tooltips
-- Keyboard shortcuts
-- Multi-language support
-
----
-
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
@@ -357,26 +200,16 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ---
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
----
+## Support
 
-## 🙏 Acknowledgments
-
-- Powered by [Groq](https://groq.com/) AI inference
-- Built with [FastAPI](https://fastapi.tiangolo.com/)
-- Inspired by CodeQL and Semgrep
+- **Issues**: [GitHub Issues](https://github.com/IUC4801/scanax/issues)
+- **Documentation**: [Full Docs](https://github.com/IUC4801/scanax/wiki)
+- **Email**: ayushichaudhuri50@gmail.com
 
 ---
 
-## 📞 Support
-
-- **Issues**: [GitHub Issues](https://github.com/yourusername/scanax/issues)
-- **Documentation**: [Full Docs](https://github.com/yourusername/scanax/wiki)
-- **Email**: your.email@example.com
-
----
-
-**Enjoy safer coding with Scanax! 🛡️**
+**Enjoy safer coding with Scanax!**

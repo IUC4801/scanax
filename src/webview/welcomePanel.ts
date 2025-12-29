@@ -1,12 +1,14 @@
 import * as vscode from 'vscode';
+import fetch from 'node-fetch';
 
 export class WelcomePanel {
     public static currentPanel: WelcomePanel | undefined;
     private readonly _panel: vscode.WebviewPanel;
     private readonly _extensionUri: vscode.Uri;
     private _disposables: vscode.Disposable[] = [];
+    private _context: vscode.ExtensionContext;
 
-    public static createOrShow(extensionUri: vscode.Uri) {
+    public static createOrShow(extensionUri: vscode.Uri, context: vscode.ExtensionContext) {
         if (WelcomePanel.currentPanel) {
             WelcomePanel.currentPanel._panel.reveal(vscode.ViewColumn.One);
             return;
@@ -14,17 +16,21 @@ export class WelcomePanel {
 
         const panel = vscode.window.createWebviewPanel(
             'scanaxWelcome',
-            'Welcome to Scanax',
+            'Scanax: Welcome',
             vscode.ViewColumn.One,
-            { enableScripts: true }
+            { 
+                enableScripts: true,
+                retainContextWhenHidden: true
+            }
         );
 
-        WelcomePanel.currentPanel = new WelcomePanel(panel, extensionUri);
+        WelcomePanel.currentPanel = new WelcomePanel(panel, extensionUri, context);
     }
 
-    private constructor(panel: vscode.WebviewPanel, extensionUri: vscode.Uri) {
+    private constructor(panel: vscode.WebviewPanel, extensionUri: vscode.Uri, context: vscode.ExtensionContext) {
         this._panel = panel;
         this._extensionUri = extensionUri;
+        this._context = context;
 
         this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
         this._panel.webview.onDidReceiveMessage(
@@ -36,24 +42,105 @@ export class WelcomePanel {
         this._update();
     }
 
-    private _handleMessage(message: any) {
+    private async _handleMessage(message: any) {
         switch (message.command) {
-            case 'startTutorial':
-                vscode.commands.executeCommand('scanax.startTutorial');
+            case 'useFreeBackend':
+                await this._setupFreeBackend();
                 break;
-            case 'openSample':
-                vscode.commands.executeCommand('scanax.openSampleCode');
+            case 'validateApiKey':
+                await this._validateApiKey(message.apiKey, message.provider);
                 break;
-            case 'scanWorkspace':
-                vscode.commands.executeCommand('scanax.workspaceScan');
+            case 'readDocs':
+                vscode.env.openExternal(vscode.Uri.parse('https://github.com/IUC4801/scanax'));
                 break;
-            case 'openSettings':
-                vscode.commands.executeCommand('workbench.action.openSettings', 'scanax');
-                break;
-            case 'dontShowAgain':
-                vscode.workspace.getConfiguration('scanax').update('showWelcome', false, vscode.ConfigurationTarget.Global);
-                this._panel.dispose();
-                break;
+        }
+    }
+
+    private async _setupFreeBackend() {
+        const config = vscode.workspace.getConfiguration('scanax');
+        await config.update('provider', 'Default (Free)', vscode.ConfigurationTarget.Global);
+        await config.update('backendUrl', 'https://scanax-backend.onrender.com', vscode.ConfigurationTarget.Global);
+        await this._context.globalState.update('hasSeenSetup', true);
+        
+        this._showSuccessView();
+    }
+
+    private async _validateApiKey(apiKey: string, provider: string) {
+        if (!apiKey || apiKey.trim().length === 0) {
+            this._showError('Please enter an API key');
+            return;
+        }
+
+        // Validate format based on provider
+        if (provider === 'groq') {
+            if (!apiKey.startsWith('gsk_')) {
+                this._showError('Invalid Groq API key format. Expected: gsk_...');
+                return;
+            }
+        } else if (provider === 'openai') {
+            if (!apiKey.startsWith('sk-')) {
+                this._showError('Invalid OpenAI API key format. Expected: sk-...');
+                return;
+            }
+        } else if (provider === 'anthropic') {
+            if (!apiKey.startsWith('sk-ant-')) {
+                this._showError('Invalid Anthropic API key format. Expected: sk-ant-...');
+                return;
+            }
+        }
+
+        // Show validating state
+        this._panel.webview.postMessage({ type: 'validating' });
+
+        // Validate with backend
+        try {
+            const backendUrl = vscode.workspace.getConfiguration('scanax').get<string>('backendUrl', 'https://scanax-backend.onrender.com');
+            const response = await fetch(`${backendUrl}/validate-key`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ api_key: apiKey, provider }),
+                timeout: 10000
+            } as any);
+
+            if (response.ok) {
+                const config = vscode.workspace.getConfiguration('scanax');
+                await config.update('provider', `${provider.charAt(0).toUpperCase() + provider.slice(1)} (Custom)`, vscode.ConfigurationTarget.Global);
+                await config.update('customApiKey', apiKey, vscode.ConfigurationTarget.Global);
+                await this._context.globalState.update('hasSeenSetup', true);
+                
+                this._showSuccessView();
+            } else {
+                const data: any = await response.json();
+                this._showError(data.error || 'Invalid API key. Please check and try again.');
+            }
+        } catch (error: any) {
+            this._showError('Could not validate API key. Using free backend instead.');
+            // Fallback to free backend
+            await this._setupFreeBackend();
+        }
+    }
+
+    private _showError(message: string) {
+        this._panel.webview.postMessage({ type: 'error', message });
+    }
+
+    private _showSuccessView() {
+        this._panel.webview.html = this._getSuccessHtml();
+        setTimeout(() => {
+            this._panel.dispose();
+        }, 3000);
+    }
+
+    public dispose() {
+        WelcomePanel.currentPanel = undefined;
+
+        this._panel.dispose();
+
+        while (this._disposables.length) {
+            const disposable = this._disposables.pop();
+            if (disposable) {
+                disposable.dispose();
+            }
         }
     }
 
@@ -71,300 +158,262 @@ export class WelcomePanel {
                 <style>
                     * { margin: 0; padding: 0; box-sizing: border-box; }
                     body {
-                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
                         background: var(--vscode-editor-background);
                         color: var(--vscode-editor-foreground);
-                        padding: 40px;
+                        padding: 30px 40px;
                         line-height: 1.6;
                     }
                     .container {
-                        max-width: 900px;
+                        max-width: 650px;
                         margin: 0 auto;
                     }
-                    h1 {
-                        font-size: 36px;
-                        margin-bottom: 10px;
-                        display: flex;
-                        align-items: center;
-                        gap: 12px;
-                    }
-                    .shield-icon {
-                        font-size: 42px;
-                    }
-                    .subtitle {
-                        font-size: 18px;
-                        color: var(--vscode-descriptionForeground);
-                        margin-bottom: 40px;
-                    }
-                    .section {
-                        margin-bottom: 40px;
-                    }
-                    h2 {
-                        font-size: 24px;
-                        margin-bottom: 16px;
-                        color: var(--vscode-textLink-foreground);
-                    }
-                    .features {
-                        display: grid;
-                        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-                        gap: 20px;
+                    .header {
+                        text-align: left;
                         margin-bottom: 30px;
                     }
-                    .feature-card {
-                        background: var(--vscode-editor-inactiveSelectionBackground);
-                        border: 1px solid var(--vscode-panel-border);
-                        border-radius: 8px;
-                        padding: 20px;
-                    }
-                    .feature-icon {
-                        font-size: 32px;
-                        margin-bottom: 12px;
-                    }
-                    .feature-title {
-                        font-size: 16px;
+                    h1 {
+                        font-size: 24px;
                         font-weight: 600;
-                        margin-bottom: 8px;
+                        margin-bottom: 20px;
+                        color: var(--vscode-editor-foreground);
                     }
-                    .feature-desc {
+                    .description {
                         font-size: 14px;
                         color: var(--vscode-descriptionForeground);
+                        margin-bottom: 12px;
+                        line-height: 1.5;
                     }
-                    .cta-buttons {
-                        display: flex;
-                        gap: 12px;
-                        flex-wrap: wrap;
-                        margin-top: 30px;
+                    .section {
+                        margin-bottom: 25px;
                     }
                     .btn {
-                        padding: 12px 24px;
-                        border: none;
-                        border-radius: 5px;
-                        font-size: 14px;
-                        font-weight: 600;
-                        cursor: pointer;
-                        transition: all 0.2s;
-                    }
-                    .btn-primary {
+                        width: 100%;
+                        padding: 12px 20px;
                         background: var(--vscode-button-background);
                         color: var(--vscode-button-foreground);
+                        border: none;
+                        border-radius: 2px;
+                        font-size: 13px;
+                        font-weight: 500;
+                        cursor: pointer;
+                        transition: background 0.2s;
+                        margin-bottom: 10px;
                     }
-                    .btn-primary:hover {
+                    .btn:hover {
                         background: var(--vscode-button-hoverBackground);
                     }
                     .btn-secondary {
-                        background: var(--vscode-button-secondaryBackground);
-                        color: var(--vscode-button-secondaryForeground);
-                        border: 1px solid var(--vscode-panel-border);
+                        background: transparent;
+                        color: var(--vscode-button-foreground);
+                        border: 1px solid var(--vscode-button-border);
                     }
                     .btn-secondary:hover {
                         background: var(--vscode-button-secondaryHoverBackground);
                     }
-                    .steps {
-                        background: var(--vscode-textBlockQuote-background);
-                        border-left: 4px solid var(--vscode-textLink-foreground);
-                        padding: 20px;
-                        border-radius: 4px;
-                        margin-top: 20px;
-                    }
-                    .step {
-                        margin-bottom: 16px;
-                        display: flex;
-                        gap: 12px;
-                    }
-                    .step-number {
-                        background: var(--vscode-textLink-foreground);
-                        color: var(--vscode-button-foreground);
-                        width: 28px;
-                        height: 28px;
-                        border-radius: 50%;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        font-weight: 700;
-                        flex-shrink: 0;
-                    }
-                    .step-content {
-                        flex: 1;
-                    }
-                    .step-title {
-                        font-weight: 600;
-                        margin-bottom: 4px;
-                    }
-                    .keyboard-shortcut {
-                        display: inline-block;
-                        background: var(--vscode-keybindingLabel-background);
-                        color: var(--vscode-keybindingLabel-foreground);
-                        border: 1px solid var(--vscode-keybindingLabel-border);
-                        padding: 2px 8px;
-                        border-radius: 3px;
-                        font-family: monospace;
-                        font-size: 12px;
-                        margin: 0 2px;
-                    }
-                    .footer {
-                        margin-top: 40px;
-                        padding-top: 20px;
+                    .api-section {
+                        margin-top: 30px;
+                        padding-top: 25px;
                         border-top: 1px solid var(--vscode-panel-border);
-                        display: flex;
-                        justify-content: space-between;
-                        align-items: center;
                     }
-                    .checkbox-container {
-                        display: flex;
-                        align-items: center;
-                        gap: 8px;
-                        font-size: 14px;
+                    .api-label {
+                        font-size: 13px;
+                        font-weight: 500;
+                        margin-bottom: 8px;
+                        color: var(--vscode-foreground);
                     }
-                    a {
+                    .input-group {
+                        margin-bottom: 12px;
+                    }
+                    select, input {
+                        width: 100%;
+                        padding: 8px 10px;
+                        background: var(--vscode-input-background);
+                        color: var(--vscode-input-foreground);
+                        border: 1px solid var(--vscode-input-border);
+                        border-radius: 2px;
+                        font-size: 13px;
+                        font-family: inherit;
+                    }
+                    select:focus, input:focus {
+                        outline: 1px solid var(--vscode-focusBorder);
+                        border-color: var(--vscode-focusBorder);
+                    }
+                    .error-message {
+                        background: var(--vscode-inputValidation-errorBackground);
+                        color: var(--vscode-inputValidation-errorForeground);
+                        border: 1px solid var(--vscode-inputValidation-errorBorder);
+                        padding: 10px;
+                        border-radius: 2px;
+                        font-size: 12px;
+                        margin-top: 10px;
+                        display: none;
+                    }
+                    .loading {
+                        opacity: 0.6;
+                        pointer-events: none;
+                    }
+                    .hint {
+                        font-size: 11px;
+                        color: var(--vscode-descriptionForeground);
+                        margin-top: 4px;
+                    }
+                    .link {
                         color: var(--vscode-textLink-foreground);
                         text-decoration: none;
                     }
-                    a:hover {
+                    .link:hover {
                         text-decoration: underline;
                     }
                 </style>
             </head>
             <body>
                 <div class="container">
-                    <h1>
-                        <span class="shield-icon">🛡️</span>
-                        Welcome to Scanax!
-                    </h1>
-                    <p class="subtitle">AI-Powered Security Vulnerability Scanner for VS Code</p>
-
-                    <div class="section">
-                        <h2>✨ Key Features</h2>
-                        <div class="features">
-                            <div class="feature-card">
-                                <div class="feature-icon">🔍</div>
-                                <div class="feature-title">Real-Time Scanning</div>
-                                <div class="feature-desc">Detects vulnerabilities as you code with inline diagnostics</div>
-                            </div>
-                            <div class="feature-card">
-                                <div class="feature-icon">🤖</div>
-                                <div class="feature-title">AI Fix Suggestions</div>
-                                <div class="feature-desc">Get intelligent code fixes powered by AI</div>
-                            </div>
-                            <div class="feature-card">
-                                <div class="feature-icon">🔐</div>
-                                <div class="feature-title">Secret Detection</div>
-                                <div class="feature-desc">Finds hardcoded API keys, passwords, and credentials</div>
-                            </div>
-                            <div class="feature-card">
-                                <div class="feature-icon">📦</div>
-                                <div class="feature-title">Dependency Scanner</div>
-                                <div class="feature-desc">Checks for CVEs in your dependencies</div>
-                            </div>
-                            <div class="feature-card">
-                                <div class="feature-icon">🏷️</div>
-                                <div class="feature-title">CWE References</div>
-                                <div class="feature-desc">Every vulnerability tagged with CWE ID and CVSS score</div>
-                            </div>
-                            <div class="feature-card">
-                                <div class="feature-icon">💡</div>
-                                <div class="feature-title">Rich Tooltips</div>
-                                <div class="feature-desc">Hover over vulnerabilities for complete details</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="section">
-                        <h2>🚀 Quick Start Guide</h2>
-                        <div class="steps">
-                            <div class="step">
-                                <div class="step-number">1</div>
-                                <div class="step-content">
-                                    <div class="step-title">Start the Backend Server</div>
-                                    <div>Navigate to <code>backend/</code> folder and run <code>python3.12 main.py</code></div>
-                                </div>
-                            </div>
-                            <div class="step">
-                                <div class="step-number">2</div>
-                                <div class="step-content">
-                                    <div class="step-title">Try the Sample Code</div>
-                                    <div>Open a sample vulnerable file to see Scanax in action</div>
-                                </div>
-                            </div>
-                            <div class="step">
-                                <div class="step-number">3</div>
-                                <div class="step-content">
-                                    <div class="step-title">Scan Your Code</div>
-                                    <div>Press <span class="keyboard-shortcut">Ctrl+Shift+S</span> to scan current file or <span class="keyboard-shortcut">Ctrl+Shift+W</span> for workspace</div>
-                                </div>
-                            </div>
-                            <div class="step">
-                                <div class="step-number">4</div>
-                                <div class="step-content">
-                                    <div class="step-title">Review & Fix</div>
-                                    <div>Check the Scanax panel, hover over issues, and click "Get Fix Suggestion"</div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="section">
-                        <h2>⌨️ Keyboard Shortcuts</h2>
-                        <p>
-                            <span class="keyboard-shortcut">Ctrl+Shift+S</span> Scan current file<br>
-                            <span class="keyboard-shortcut">Ctrl+Shift+W</span> Scan entire workspace<br>
-                            <span class="keyboard-shortcut">Ctrl+Shift+V</span> Open vulnerability panel
+                    <div class="header">
+                        <h1>Welcome to Scanax!</h1>
+                        <p class="description">
+                            Configure your API key to connect to Scanax.
+                        </p>
+                        <p class="description">
+                            This enables secure analysis of your code and dependencies.
                         </p>
                     </div>
 
-                    <div class="cta-buttons">
-                        <button class="btn btn-primary" onclick="startTutorial()">🎓 Start Tutorial</button>
-                        <button class="btn btn-primary" onclick="openSample()">📝 Open Sample Code</button>
-                        <button class="btn btn-secondary" onclick="scanWorkspace()">🔍 Scan Workspace</button>
-                        <button class="btn btn-secondary" onclick="openSettings()">⚙️ Settings</button>
+                    <div class="section">
+                        <button class="btn" onclick="useFreeBackend()">🚀 Use Free Backend (Recommended)</button>
+                        <p class="hint">Get started instantly with our hosted backend - no configuration needed!</p>
                     </div>
 
-                    <div class="footer">
-                        <div class="checkbox-container">
-                            <button class="btn btn-secondary" onclick="dontShowAgain()" style="padding: 8px 16px;">Don't show again</button>
+                    <div class="api-section">
+                        <div class="api-label">Or provide API key of your favorite LLM provider:</div>
+                        
+                        <div class="input-group">
+                            <select id="provider">
+                                <option value="groq">Groq (gsk_...)</option>
+                                <option value="openai">OpenAI (sk-...)</option>
+                                <option value="anthropic">Anthropic (sk-ant-...)</option>
+                            </select>
                         </div>
-                        <div>
-                            <a href="https://github.com/IUC4801/scanax" target="_blank">Documentation</a> •
-                            <a href="https://github.com/IUC4801/scanax/issues" target="_blank">Report Issue</a>
+
+                        <div class="input-group">
+                            <input 
+                                type="password" 
+                                id="apiKey" 
+                                placeholder="Enter your API key..."
+                                onkeypress="if(event.key==='Enter') validateKey()"
+                            />
+                            <p class="hint">Your key is stored securely and never shared.</p>
                         </div>
+
+                        <button class="btn" onclick="validateKey()" id="validateBtn">Validate & Continue</button>
+                        
+                        <div class="error-message" id="errorMsg"></div>
+                    </div>
+
+                    <div class="section" style="margin-top: 20px;">
+                        <button class="btn btn-secondary" onclick="readDocs()">📖 Read Documentation</button>
                     </div>
                 </div>
 
                 <script>
                     const vscode = acquireVsCodeApi();
-                    
-                    function startTutorial() {
-                        vscode.postMessage({ command: 'startTutorial' });
+
+                    function useFreeBackend() {
+                        vscode.postMessage({ command: 'useFreeBackend' });
                     }
-                    
-                    function openSample() {
-                        vscode.postMessage({ command: 'openSample' });
+
+                    function validateKey() {
+                        const apiKey = document.getElementById('apiKey').value;
+                        const provider = document.getElementById('provider').value;
+                        const errorMsg = document.getElementById('errorMsg');
+                        const validateBtn = document.getElementById('validateBtn');
+
+                        if (!apiKey.trim()) {
+                            errorMsg.textContent = 'Please enter an API key';
+                            errorMsg.style.display = 'block';
+                            return;
+                        }
+
+                        errorMsg.style.display = 'none';
+                        validateBtn.textContent = 'Validating...';
+                        validateBtn.classList.add('loading');
+
+                        vscode.postMessage({ 
+                            command: 'validateApiKey',
+                            apiKey: apiKey,
+                            provider: provider
+                        });
                     }
-                    
-                    function scanWorkspace() {
-                        vscode.postMessage({ command: 'scanWorkspace' });
+
+                    function readDocs() {
+                        vscode.postMessage({ command: 'readDocs' });
                     }
-                    
-                    function openSettings() {
-                        vscode.postMessage({ command: 'openSettings' });
-                    }
-                    
-                    function dontShowAgain() {
-                        vscode.postMessage({ command: 'dontShowAgain' });
-                    }
+
+                    // Listen for messages from extension
+                    window.addEventListener('message', event => {
+                        const message = event.data;
+                        const errorMsg = document.getElementById('errorMsg');
+                        const validateBtn = document.getElementById('validateBtn');
+
+                        if (message.type === 'error') {
+                            errorMsg.textContent = message.message;
+                            errorMsg.style.display = 'block';
+                            validateBtn.textContent = 'Validate & Continue';
+                            validateBtn.classList.remove('loading');
+                        } else if (message.type === 'validating') {
+                            errorMsg.style.display = 'none';
+                        }
+                    });
                 </script>
             </body>
             </html>
         `;
     }
 
-    public dispose() {
-        WelcomePanel.currentPanel = undefined;
-        this._panel.dispose();
-        while (this._disposables.length) {
-            const d = this._disposables.pop();
-            if (d) {
-                d.dispose();
-            }
-        }
+    private _getSuccessHtml(): string {
+        return `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <style>
+                    body {
+                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+                        background: var(--vscode-editor-background);
+                        color: var(--vscode-editor-foreground);
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        height: 100vh;
+                        margin: 0;
+                        text-align: center;
+                    }
+                    .success {
+                        max-width: 500px;
+                    }
+                    .icon {
+                        font-size: 64px;
+                        margin-bottom: 20px;
+                    }
+                    h1 {
+                        font-size: 24px;
+                        font-weight: 600;
+                        margin-bottom: 12px;
+                    }
+                    p {
+                        font-size: 14px;
+                        color: var(--vscode-descriptionForeground);
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="success">
+                    <div class="icon">✅</div>
+                    <h1>You're all set to use Scanax!</h1>
+                    <p>Click the shield icon in the sidebar to start scanning your code.</p>
+                </div>
+            </body>
+            </html>
+        `;
     }
 }

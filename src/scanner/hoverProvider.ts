@@ -30,7 +30,7 @@ export class ScanaxHoverProvider implements vscode.HoverProvider {
             const vulnData = this.parseVulnerabilityData(diagnostic);
 
             // Build rich hover content with clean formatting
-            markdown.appendMarkdown(`### 🛡️ Security Vulnerability\n\n`);
+            markdown.appendMarkdown(`### Security Vulnerability\n\n`);
             
             // Priority: CVSS Score first, then severity
             if (vulnData.score || vulnData.severity) {
@@ -43,10 +43,11 @@ export class ScanaxHoverProvider implements vscode.HoverProvider {
                 markdown.appendMarkdown('\n\n');
             }
 
-            // Issue message - don't repeat the title
-            markdown.appendMarkdown(`**Issue:** ${diagnostic.message}\n\n`);
+            // Issue message - use title from parsed data if available, otherwise use diagnostic message
+            const issueText = vulnData.title || diagnostic.message;
+            markdown.appendMarkdown(`**Issue:** ${issueText}\n\n`);
 
-            if (vulnData.description) {
+            if (vulnData.description && vulnData.description !== issueText) {
                 markdown.appendMarkdown(`**Description:** ${vulnData.description}\n\n`);
             }
 
@@ -59,8 +60,11 @@ export class ScanaxHoverProvider implements vscode.HoverProvider {
             }
 
             if (vulnData.recommendation) {
-                // Clean up recommendation text (remove numbering artifacts)
-                const cleanRec = vulnData.recommendation.replace(/,\d+\./g, '\n-');
+                // Clean up recommendation text
+                const cleanRec = vulnData.recommendation
+                    .replace(/,\s*(\d+\.)/g, '\n- ')  // Convert "1." to "- "
+                    .replace(/^\d+\.\s*/g, '- ')       // Convert leading "1. " to "- "
+                    .trim();
                 markdown.appendMarkdown(`**Recommendation:**\n${cleanRec}\n\n`);
             }
 
@@ -81,7 +85,7 @@ export class ScanaxHoverProvider implements vscode.HoverProvider {
     private parseVulnerabilityData(diagnostic: vscode.Diagnostic): any {
         // Try to extract structured data from diagnostic
         const data: any = {
-            title: diagnostic.message,
+            title: null,  // Will be extracted from relatedInformation
             severity: 'medium',
             fix: null,
             description: null,
@@ -94,6 +98,9 @@ export class ScanaxHoverProvider implements vscode.HoverProvider {
         // Extract fix from relatedInformation
         if (diagnostic.relatedInformation) {
             for (const info of diagnostic.relatedInformation) {
+                if (info.message.startsWith('Issue: ')) {
+                    data.title = info.message.replace('Issue: ', '');
+                }
                 if (info.message.startsWith('Suggested fix: ')) {
                     data.fix = info.message.replace('Suggested fix: ', '');
                 }

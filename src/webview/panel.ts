@@ -250,7 +250,8 @@ export class VulnerabilityPanel {
                                     <div class="vuln-actions">
                                         <button class="fix-btn" onclick="getSuggestedFix(${JSON.stringify(v).replace(/"/g, '&quot;')})" title="Get AI-suggested fix (for reference)">Get Fix Suggestion</button>
                                         <button class="reveal-btn" onclick="revealInEditor(${JSON.stringify({file: v.file, line: v.line}).replace(/"/g, '&quot;')})">Reveal</button>
-                                        <button class="report-fp-btn" onclick="reportFalsePositive(${JSON.stringify({file: v.file, line: v.line}).replace(/"/g, '&quot;')})" title="Report this as a false positive">Report False Positive</button>
+                                        <!-- TODO: Re-enable in next release when backend training is implemented -->
+                                        <!-- <button class="report-fp-btn" onclick="reportFalsePositive(${JSON.stringify({file: v.file, line: v.line}).replace(/"/g, '&quot;')})" title="Report this as a false positive">Report False Positive</button> -->
                                     </div>
                                 </div>
                             `).join('')}
@@ -755,9 +756,12 @@ export class VulnerabilityPanel {
                     function revealInEditor(data) {
                         vscode.postMessage({ command: 'openFile', filePath: data.file, line: data.line });
                     }
-                    function reportFalsePositive(data) {
-                        vscode.postMessage({ command: 'reportFalsePositive', data: data });
-                    }
+                    
+                    // TODO: Re-enable in next release when backend training is implemented
+                    // function reportFalsePositive(data) {
+                    //     vscode.postMessage({ command: 'reportFalsePositive', data: data });
+                    // }
+                    
                     function rescan() {
                         vscode.postMessage({ command: 'rescan' });
                     }

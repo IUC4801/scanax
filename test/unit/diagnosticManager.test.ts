@@ -10,7 +10,7 @@ suite('DiagnosticManager Test Suite', () => {
     });
 
     teardown(() => {
-        manager.clear();
+        manager.dispose();
     });
 
     test('Should create diagnostic collection', () => {
@@ -139,7 +139,7 @@ suite('DiagnosticManager Test Suite', () => {
         } as any;
 
         manager.setDiagnostics(mockDocument, [{ line: 1, message: 'Test' }]);
-        manager.clear();
+        manager.clearDiagnostics(mockDocument);
         
         // Should not throw
         assert.ok(true);

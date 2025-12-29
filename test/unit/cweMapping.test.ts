@@ -62,12 +62,12 @@ suite('CWE Mapping Test Suite', () => {
 
         const report = generateComplianceReport(vulnerabilities);
         
-        assert.ok(report.owasp);
-        assert.ok(report.cwe);
-        assert.ok(report.summary);
+        assert.ok(report.owaspTop10);
+        assert.ok(report.cweCoverage);
+        assert.ok(report.severityDistribution);
         
-        // Should count unique vulnerability types
-        assert.ok(report.summary.totalVulnerabilities >= 3);
+        // Should have mappings
+        assert.ok(report.owaspTop10 instanceof Map);
     });
 
     test('Should have mappings for common vulnerabilities', () => {

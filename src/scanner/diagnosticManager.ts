@@ -42,8 +42,11 @@ export class DiagnosticManager {
             const line = document.lineAt(Math.min(lineIdx, document.lineCount - 1));
             const range = new vscode.Range(line.range.start, line.range.end);
 
-            // Create concise message - just the issue without repeating metadata
-            const cleanMessage = vuln.message || vuln.title || "Security issue detected";
+            // Create concise message for the diagnostic tooltip
+            // Keep it short since the hover will show full details
+            const category = vuln.category || vuln.type || 'Security Issue';
+            const severity = vuln.severity ? ` (${vuln.severity.toUpperCase()})` : '';
+            const cleanMessage = `${category}${severity}`;
             
             const diagnostic: ScanaxDiagnostic = new vscode.Diagnostic(
                 range,
@@ -59,6 +62,13 @@ export class DiagnosticManager {
 
             // Enhanced: Store all metadata in relatedInformation for hover provider
             const relatedInfo: vscode.DiagnosticRelatedInformation[] = [];
+            
+            // Store the full issue message
+            const fullMessage = vuln.message || vuln.title || "Security issue detected";
+            relatedInfo.push(new vscode.DiagnosticRelatedInformation(
+                new vscode.Location(document.uri, range),
+                `Issue: ${fullMessage}`
+            ));
             
             if (vuln.fix) {
                 relatedInfo.push(new vscode.DiagnosticRelatedInformation(

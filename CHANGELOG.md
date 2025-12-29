@@ -1,7 +1,57 @@
-# Implementation Changelog: Workspace-Wide Security Scan
+# Changelog
 
-## Summary
-Implemented workspace-wide security scanning with AI-driven fixing capability. Users can now scan their entire project for vulnerabilities in one click and auto-fix issues using Groq's Llama 3.3 70B model.
+All notable changes to the Scanax Security Scanner extension will be documented in this file.
+
+## [0.0.1] - 2025-01-01
+
+### Added
+- Initial release of Scanax Security Scanner
+- Real-time security vulnerability scanning for 9 programming languages
+- AI-powered fix suggestions using Llama 3.1
+- Sidebar setup view with API key validation
+- Backend validation endpoint integration
+- Support for any LLM provider (Groq, OpenAI, Anthropic)
+- Secrets and PII detection (API keys, passwords, tokens)
+- Dependency vulnerability scanning with CVE detection
+- CWE references and CVSS severity scoring
+- Rich hover tooltips with detailed vulnerability information
+- Inline diagnostics in Problems panel
+- Workspace-wide security scanning
+- File-level security scanning
+- Keyboard shortcuts (Ctrl+Shift+S, Ctrl+Shift+W, Ctrl+Shift+V)
+- Progressive disclosure UX (setup view, then dashboard)
+- Custom diagnostic manager for brief tooltips
+- Custom hover provider for detailed vulnerability information
+- False positive infrastructure (storage and filtering)
+- Real-time scanning toggle
+- Support for 50+ vulnerability types including:
+  - SQL Injection
+  - Cross-Site Scripting (XSS)
+  - Command Injection
+  - Path Traversal
+  - Insecure Deserialization
+  - XML External Entities (XXE)
+  - Cryptographic Weaknesses
+  - SSRF and more
+
+### Fixed
+- Extension loading issue (corrected main entry point path)
+- Webview CSP configuration for inline scripts
+- Context key initialization timing
+- Duplicate hover text issue
+- API key validation for multiple providers
+
+### Changed
+- Simplified first-time setup flow to sidebar view
+- Backend API key validation with 15-second timeout
+- Button text from "Use Free Backend" to "Use Default Key"
+
+### Technical Details
+- Extension entry point: ./out/src/extension.js
+- Backend API: https://scanax-backend.onrender.com
+- VS Code API version: 1.75.0+
+- TypeScript version: 4.9.5
+- Programming languages supported: JavaScript, TypeScript, Python, C#, Java, Go, PHP, Ruby, C/C++
 
 ## Files Modified
 

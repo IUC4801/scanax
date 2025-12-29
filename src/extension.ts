@@ -5,7 +5,7 @@ import { DiagnosticManager } from './scanner/diagnosticManager';
 import { ScanaxCodeActionProvider } from './scanner/codeActionProvider';
 import { ScanaxHoverProvider } from './scanner/hoverProvider';
 import { VulnerabilityPanel } from './webview/panel';
-import { WelcomePanel } from './webview/welcomePanel';
+import { WelcomeViewProvider } from './webview/welcomeView';
 import { CacheManager } from './scanner/cacheManager';
 import { StaticAnalyzer } from './scanner/staticAnalyzer';
 import { IgnoreManager } from './scanner/ignoreManager';
@@ -91,7 +91,12 @@ let debounceTimer: NodeJS.Timeout | undefined;
 let realTimeScanEnabled: boolean = false;
 let healthChecker: BackendHealthChecker;
 
-export function activate(context: vscode.ExtensionContext) {
+export function activate(context: vscode.ExtensionContext) {    
+    // Set context key FIRST before registering views
+    const hasSeenSetup = context.globalState.get<boolean>('hasSeenSetup', false);
+    console.log('hasSeenSetup:', hasSeenSetup);
+    vscode.commands.executeCommand('setContext', 'scanax.setupComplete', hasSeenSetup);
+
     diagnosticManager = new DiagnosticManager();
     vulnerabilityTreeProvider = new VulnerabilityTreeProvider();
     cacheManager = new CacheManager();
@@ -101,22 +106,20 @@ export function activate(context: vscode.ExtensionContext) {
 
     vscode.window.registerTreeDataProvider('scanax.securityDashboard', vulnerabilityTreeProvider);
 
-    // Check if first-time user and show setup wizard
-    const config = vscode.workspace.getConfiguration('scanax');
-    const hasSeenSetup = context.globalState.get<boolean>('hasSeenSetup', false);
-    const isSetupComplete = ApiKeyManager.isSetupComplete();
-    
-    // Always show wizard if setup incomplete OR first time
-    if (!hasSeenSetup || !isSetupComplete) {
-        setTimeout(async () => {
-            const setupComplete = await ApiKeyManager.showSetupWizard();
-            if (setupComplete) {
-                await context.globalState.update('hasSeenSetup', true);
-            }
-        }, 1000); // Show faster - 1 second
-    }
+    // Register welcome view in sidebar
+    console.log('========================================');
+    console.log('REGISTERING WELCOME VIEW PROVIDER');
+    console.log('========================================');
+    const welcomeViewProvider = new WelcomeViewProvider(context.extensionUri, context);
+    context.subscriptions.push(
+        vscode.window.registerWebviewViewProvider('scanax.welcomeView', welcomeViewProvider, {
+            webviewOptions: { retainContextWhenHidden: true }
+        })
+    );
+    console.log('Welcome view provider registered successfully');
 
     // Start backend health monitoring
+    const config = vscode.workspace.getConfiguration('scanax');
     const backendUrl = config.get<string>('backendUrl', 'https://scanax-backend.onrender.com');
     healthChecker.start(backendUrl);
 
@@ -134,6 +137,23 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(ignoreFileWatcher);
 
     let allVulnerabilities: any[] = [];
+
+    // Helper function to filter out false positives
+    const filterFalsePositives = (vulnerabilities: any[], filePath: string): any[] => {
+        const falsePositives = context.globalState.get<any[]>('falsePositives', []);
+        if (falsePositives.length === 0) {
+            return vulnerabilities;
+        }
+        
+        return vulnerabilities.filter(vuln => {
+            const isFalsePositive = falsePositives.some(fp => 
+                fp.file === filePath && 
+                fp.line === vuln.line &&
+                (fp.type === vuln.type || fp.type === vuln.category)
+            );
+            return !isFalsePositive;
+        });
+    };
 
     const applySurgicalFix = async (document: vscode.TextDocument, fixedCode: string, lineNumber: number): Promise<boolean> => {
         const edit = new vscode.WorkspaceEdit();
@@ -175,7 +195,7 @@ export function activate(context: vscode.ExtensionContext) {
 
     const performScan = async (filesToScan: vscode.Uri[], progress?: vscode.Progress<{ message?: string; increment?: number }>): Promise<Map<string, any[]>> => {
         const config = vscode.workspace.getConfiguration('scanax');
-        const userKey = config.get<string>('provider') === 'Groq (Custom)' ? config.get<string>('customApiKey') : null;
+        const userKey = config.get<string>('customApiKey') || null;
 
         const scanResults = new Map<string, any[]>();
         const totalFiles = filesToScan.length;
@@ -292,7 +312,7 @@ export function activate(context: vscode.ExtensionContext) {
                     // LLM analysis
                     progress.report({ message: "Running AI analysis..." });
                     const config = vscode.workspace.getConfiguration('scanax');
-                    const userKey = config.get<string>('provider') === 'Groq (Custom)' ? config.get<string>('customApiKey') : null;
+                    const userKey = config.get<string>('customApiKey') || null;
                     
                     try {
                         const response = await sendCodeToScanaxBackend(code, userKey);
@@ -314,6 +334,9 @@ export function activate(context: vscode.ExtensionContext) {
 
                     // Apply ignore rules
                     vulnerabilities = ignoreManager.filterIgnored(document, vulnerabilities);
+                    
+                    // Filter out false positives
+                    vulnerabilities = filterFalsePositives(vulnerabilities, document.uri.fsPath);
                     
                     // Cache results
                     cacheManager.setCachedResult(document.uri.toString(), code, vulnerabilities);
@@ -390,7 +413,7 @@ export function activate(context: vscode.ExtensionContext) {
                     const critical = allVulnerabilities.filter(v => v.severity === 'critical').length;
                     const high = allVulnerabilities.filter(v => v.severity === 'high').length;
                     vscode.window.showWarningMessage(
-                        `🛡️ Scan complete: ${totalVulns} issues found (${critical} critical, ${high} high)`
+                        `Scan complete: ${totalVulns} issues found (${critical} critical, ${high} high)`
                     );
                 }
             } catch (err: any) { 
@@ -413,7 +436,7 @@ export function activate(context: vscode.ExtensionContext) {
             const code = doc.getText();
 
             const config = vscode.workspace.getConfiguration('scanax');
-            const userKey = config.get<string>('provider') === 'Groq (Custom)' ? config.get<string>('customApiKey') : null;
+            const userKey = config.get<string>('customApiKey') || null;
             
             const response = await vscode.window.withProgress({ 
                 location: vscode.ProgressLocation.Notification, 
@@ -456,7 +479,7 @@ export function activate(context: vscode.ExtensionContext) {
         }, async () => {
             try {
                 const config = vscode.workspace.getConfiguration('scanax');
-                const userKey = config.get<string>('provider') === 'Groq (Custom)' ? config.get<string>('customApiKey') : null;
+                const userKey = config.get<string>('customApiKey') || null;
                 
                 const results = await scanDependencies(userKey);
                 
@@ -497,10 +520,6 @@ export function activate(context: vscode.ExtensionContext) {
         });
     });
     
-    const welcomeCommand = vscode.commands.registerCommand('scanax.showWelcome', () => {
-        WelcomePanel.createOrShow(context.extensionUri);
-    });
-
     const startTutorialCommand = vscode.commands.registerCommand('scanax.startTutorial', async () => {
         const steps = [
             { message: "Welcome to Scanax! Let's scan your first file.", action: null },
@@ -598,16 +617,55 @@ export function activate(context: vscode.ExtensionContext) {
         if (reason !== undefined) { // User didn't cancel
             try {
                 const config = vscode.workspace.getConfiguration('scanax');
-                const userKey = config.get<string>('provider') === 'Groq (Custom)' ? config.get<string>('customApiKey') : null;
+                const userKey = config.get<string>('customApiKey') || null;
                 
                 const vuln = allVulnerabilities.find(v => 
                     v.file === vulnData.file && v.line === vulnData.line
                 );
 
                 if (vuln) {
+                    // Store false positive locally
+                    const falsePositives = context.globalState.get<any[]>('falsePositives', []);
+                    const fpEntry = {
+                        file: vuln.file,
+                        line: vuln.line,
+                        type: vuln.type || vuln.category,
+                        message: vuln.message || vuln.title,
+                        reason: reason || 'No reason provided',
+                        timestamp: new Date().toISOString()
+                    };
+                    falsePositives.push(fpEntry);
+                    await context.globalState.update('falsePositives', falsePositives);
+                    
+                    // Remove from current vulnerabilities list
+                    allVulnerabilities = allVulnerabilities.filter(v => 
+                        !(v.file === vuln.file && v.line === vuln.line)
+                    );
+                    
+                    // Refresh diagnostics by re-running scan on the file
                     const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(vuln.file));
-                    await reportFalsePositive(doc.getText(), vuln, reason || 'No reason provided', userKey);
-                    vscode.window.showInformationMessage('Thank you for your feedback! This will help improve Scanax.');
+                    const filteredVulns = allVulnerabilities.filter(v => v.file === vuln.file);
+                    diagnosticManager.setDiagnostics(doc, filteredVulns);
+                    
+                    // Update panel
+                    if (VulnerabilityPanel.currentPanel) {
+                        VulnerabilityPanel.currentPanel.updateVulnerabilities(allVulnerabilities);
+                    }
+                    
+                    // Update tree view
+                    const scanResults = new Map<string, any[]>();
+                    const fileVulns = allVulnerabilities.filter(v => v.file === vuln.file);
+                    if (fileVulns.length > 0) {
+                        scanResults.set(vscode.Uri.file(vuln.file).toString(), fileVulns);
+                    }
+                    vulnerabilityTreeProvider.setScanResults(scanResults);
+                    
+                    // Send to backend for training (non-blocking)
+                    reportFalsePositive(doc.getText(), vuln, reason || 'No reason provided', userKey).catch(err => {
+                        console.error('Error sending false positive to backend:', err);
+                    });
+                    
+                    vscode.window.showInformationMessage('✓ Marked as false positive and removed from results');
                 }
             } catch (err) {
                 console.error('Error reporting false positive:', err);
@@ -652,7 +710,7 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(
         runScanCommand, workspaceScanCommand, scanNowCommand, openPanelCommand,
         getSuggestedFixCommand, fixAllVulnerabilitiesCommand, scanDependenciesCommand,
-        welcomeCommand, startTutorialCommand, openSampleCodeCommand,
+        startTutorialCommand, openSampleCodeCommand,
         reportFalsePositiveCommand, createIgnoreFileCommand, clearCacheCommand, setRealTimeScanCommand,
         checkHealthCommand,
         // FIXED: plural 'registerCodeActionsProvider'

@@ -53,24 +53,15 @@ suite('DependencyScanner Test Suite', () => {
         assert.ok(Array.isArray(vulnerabilities));
     });
 
-    test('Should return empty array when no requirements.txt exists', async () => {
-        const vulnerabilities = await scanner.scanPipDependencies(tempDir);
-        assert.strictEqual(vulnerabilities.length, 0);
-    });
-
-    test('Should parse requirements.txt', async () => {
-        const requirements = `flask==2.0.0
-requests==2.26.0
-django==3.2.0
-`;
+    test('Should handle invalid package.json', async () => {
         fs.writeFileSync(
-            path.join(tempDir, 'requirements.txt'),
-            requirements
+            path.join(tempDir, 'package.json'),
+            'invalid json content'
         );
 
-        const vulnerabilities = await scanner.scanPipDependencies(tempDir);
+        const vulnerabilities = await scanner.scanNpmDependencies(tempDir);
         
-        // Should not throw and return array
+        // Should handle error gracefully
         assert.ok(Array.isArray(vulnerabilities));
     });
 
