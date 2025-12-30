@@ -48,7 +48,7 @@
         {
           "id": "scanax-sidebar",
           "title": "Scanax",
-          "icon": "resources/scanax-icon.svg"
+          "icon": "resources/scanax-icon.png"
         }
       ]
     },
@@ -59,13 +59,14 @@
           "id": "scanax.welcomeView",
           "name": "Setup",
           "icon": "$(gear)",
-          "when": "!scanax.setupComplete"
+          "when": "scanax.setupComplete == false"
         },
         {
+          "type": "tree",
           "id": "scanax.securityDashboard",
           "name": "Security Dashboard",
           "icon": "$(shield)",
-          "when": "scanax.setupComplete"
+          "when": "scanax.setupComplete == true"
         }
       ]
     },

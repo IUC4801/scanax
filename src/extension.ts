@@ -91,11 +91,11 @@ let debounceTimer: NodeJS.Timeout | undefined;
 let realTimeScanEnabled: boolean = false;
 let healthChecker: BackendHealthChecker;
 
-export function activate(context: vscode.ExtensionContext) {    
+export async function activate(context: vscode.ExtensionContext) {    
     // Set context key FIRST before registering views
     const hasSeenSetup = context.globalState.get<boolean>('hasSeenSetup', false);
     console.log('hasSeenSetup:', hasSeenSetup);
-    vscode.commands.executeCommand('setContext', 'scanax.setupComplete', hasSeenSetup);
+    await vscode.commands.executeCommand('setContext', 'scanax.setupComplete', hasSeenSetup);
 
     diagnosticManager = new DiagnosticManager();
     vulnerabilityTreeProvider = new VulnerabilityTreeProvider();
@@ -471,6 +471,26 @@ export function activate(context: vscode.ExtensionContext) {
 
     const scanNowCommand = vscode.commands.registerCommand('scanax.scanNow', () => vscode.commands.executeCommand('scanax.workspaceScan'));
     const openPanelCommand = vscode.commands.registerCommand('scanax.openPanel', () => VulnerabilityPanel.createOrShow(context.extensionUri));
+    const showWelcomeCommand = vscode.commands.registerCommand(
+    'scanax.showWelcome',
+    async () => {
+        // Reset onboarding state
+        await context.globalState.update('hasSeenSetup', false);
+
+        // Update VS Code context key
+        await vscode.commands.executeCommand(
+            'setContext',
+            'scanax.setupComplete',
+            false
+        );
+
+        // Focus Scanax sidebar so welcome view is visible
+        await vscode.commands.executeCommand(
+            'workbench.view.extension.scanax-sidebar'
+        );
+    }
+);
+
     
     const scanDependenciesCommand = vscode.commands.registerCommand('scanax.scanDependencies', async () => {
         await vscode.window.withProgress({
@@ -708,7 +728,7 @@ export function activate(context: vscode.ExtensionContext) {
     );
     
     context.subscriptions.push(
-        runScanCommand, workspaceScanCommand, scanNowCommand, openPanelCommand,
+        runScanCommand, workspaceScanCommand, scanNowCommand, openPanelCommand, showWelcomeCommand,
         getSuggestedFixCommand, fixAllVulnerabilitiesCommand, scanDependenciesCommand,
         startTutorialCommand, openSampleCodeCommand,
         reportFalsePositiveCommand, createIgnoreFileCommand, clearCacheCommand, setRealTimeScanCommand,

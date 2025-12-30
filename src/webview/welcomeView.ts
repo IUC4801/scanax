@@ -24,8 +24,8 @@ export class WelcomeViewProvider implements vscode.WebviewViewProvider {
 
         console.log('Scanax: resolveWebviewView called');
         
-        const hasSeenSetup = this._context.globalState.get<boolean>('hasSeenSetup', false);
-        console.log('Scanax: hasSeenSetup =', hasSeenSetup);
+        // const hasSeenSetup = this._context.globalState.get<boolean>('hasSeenSetup', false);
+        // console.log('Scanax: hasSeenSetup =', hasSeenSetup);
 
         const html = this._getHtmlForWebview(webviewView.webview);
         console.log('Scanax: HTML length =', html.length);
@@ -38,8 +38,18 @@ export class WelcomeViewProvider implements vscode.WebviewViewProvider {
             switch (data.type) {
                 case 'ready':
                     console.log('Scanax: Webview ready');
+                    const hasSeenSetup = this._context.globalState.get<boolean>('hasSeenSetup', false);
+                    const config = vscode.workspace.getConfiguration('scanax');
+                    const provider = config.get<string>('provider', 'Default (Free)');
+
+                    this._view?.webview.postMessage({
+                        type: 'init',
+                        hasSeenSetup,
+                        provider
+                    });
                     break;
                 case 'skipToReady':
+                    this._view?.webview.postMessage({ type: 'validating' });
                     await this._completeSetup('Free Backend', '');
                     break;
                 case 'saveApiKey':
@@ -62,12 +72,6 @@ export class WelcomeViewProvider implements vscode.WebviewViewProvider {
         this._view?.webview.postMessage({ type: 'success' });
         
         vscode.window.showInformationMessage('Scanax setup complete! Ready to scan.');
-        
-        setTimeout(() => {
-            if (this._view) {
-                this._view.webview.html = this._getHtmlForWebview(this._view.webview);
-            }
-        }, 500);
     }
 
     private async _saveApiKey(apiKey: string, provider: string) {
@@ -305,7 +309,7 @@ export class WelcomeViewProvider implements vscode.WebviewViewProvider {
                 <div class="hint">Your key is stored securely</div>
             </div>
 
-            <button onclick="saveKey()">Save & Continue</button>
+            <button id="saveBtn" onclick="saveKey()">Save & Continue</button>
 
             <div class="error" id="error"></div>
             <div class="success" id="success">✓ Saved successfully!</div>
@@ -353,7 +357,13 @@ export class WelcomeViewProvider implements vscode.WebviewViewProvider {
                     const message = event.data;
                     const error = document.getElementById('error');
                     const success = document.getElementById('success');
-                    const saveBtn = document.querySelector('button');
+                    const saveBtn = document.getElementById('saveBtn');
+
+                    if (message.type === 'init') {
+                        // Webview is now fully initialized
+                        saveBtn.disabled = false;
+                        return;
+                    }
 
                     if (message.type === 'validating') {
                         error.style.display = 'none';
@@ -368,8 +378,9 @@ export class WelcomeViewProvider implements vscode.WebviewViewProvider {
                     } else if (message.type === 'success') {
                         success.style.display = 'block';
                         error.style.display = 'none';
+                        saveBtn.disabled = false;
                     }
-                });
+                    });
             </script>
         </body>
         </html>`;
