@@ -2,7 +2,7 @@
   "name": "scanax",
   "displayName": "Scanax Security Scanner",
   "description": "Enterprise-grade security vulnerability scanner with AI-powered detection and automated remediation for 50+ vulnerability types across multiple languages",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "publisher": "AyushiChaudhuri",
   "icon": "resources/encrypted.png",
   "repository": {

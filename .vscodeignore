@@ -10,7 +10,6 @@ vsc-extension-quickstart.md
 **/*.ts
 backend/**
 scanax-tests/**
-node_modules/**
 .env
 *.log
 resources/ICON-README.md
