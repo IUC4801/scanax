@@ -289,7 +289,7 @@ export class WelcomeViewProvider implements vscode.WebviewViewProvider {
             <h2>🛡️ Welcome to Scanax!</h2>
             <p>Enterprise-grade security scanning powered by AI.</p>
             
-            <button onclick="quickStart()" style="background: var(--vscode-button-background); margin-bottom: 20px;">🚀 Quick Start (Use Default)</button>
+            <button onclick="skipSetup()" style="background: var(--vscode-button-background); margin-bottom: 20px;">Quick Start (Use Default)</button>
             
             <div style="text-align: center; margin: 15px 0; color: var(--vscode-descriptionForeground); font-size: 11px;">OR CONFIGURE CUSTOM PROVIDER</div>
             
@@ -306,7 +306,6 @@ export class WelcomeViewProvider implements vscode.WebviewViewProvider {
             </div>
 
             <button onclick="saveKey()">Save & Continue</button>
-            <button class="skip-btn" onclick="skipSetup()">Use Default Key</button>
 
             <div class="error" id="error"></div>
             <div class="success" id="success">✓ Saved successfully!</div>
