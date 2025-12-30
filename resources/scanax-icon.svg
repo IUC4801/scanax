@@ -1,18 +1,20 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none">
-  <!-- Transparent shield outline -->
+  <!-- Shield outline with dynamic color -->
   <path d="M12 2L4 5v6c0 5.5 3.5 10.5 8 12c4.5-1.5 8-6.5 8-12V5L12 2z" 
         fill="none" 
-        stroke="#000000" 
+        stroke="currentColor" 
         stroke-width="1.5"
         stroke-linecap="round"
-        stroke-linejoin="round"/>
+        stroke-linejoin="round"
+        opacity="0.9"/>
   
-  <!-- Black checkmark -->
+  <!-- Checkmark with dynamic color -->
   <path d="M9.5 12l2 2l3.5-3.5" 
-        stroke="#000000" 
+        stroke="currentColor" 
         stroke-width="2.5" 
         stroke-linecap="round" 
         stroke-linejoin="round" 
-        fill="none"/>
+        fill="none"
+        opacity="0.9"/>
 </svg>

@@ -36,6 +36,12 @@ export class WelcomeViewProvider implements vscode.WebviewViewProvider {
         webviewView.webview.onDidReceiveMessage(async (data) => {
             console.log('Scanax: Received message', data);
             switch (data.type) {
+                case 'ready':
+                    console.log('Scanax: Webview ready');
+                    break;
+                case 'skipToReady':
+                    await this._completeSetup('Free Backend', '');
+                    break;
                 case 'saveApiKey':
                     await this._saveApiKey(data.apiKey, data.provider);
                     break;
@@ -46,21 +52,28 @@ export class WelcomeViewProvider implements vscode.WebviewViewProvider {
         });
     }
 
+    private async _completeSetup(provider: string, apiKey: string) {
+        const config = vscode.workspace.getConfiguration('scanax');
+        await config.update('customApiKey', apiKey, vscode.ConfigurationTarget.Global);
+        await config.update('provider', provider, vscode.ConfigurationTarget.Global);
+        await this._context.globalState.update('hasSeenSetup', true);
+        await vscode.commands.executeCommand('setContext', 'scanax.setupComplete', true);
+        
+        this._view?.webview.postMessage({ type: 'success' });
+        
+        vscode.window.showInformationMessage('Scanax setup complete! Ready to scan.');
+        
+        setTimeout(() => {
+            if (this._view) {
+                this._view.webview.html = this._getHtmlForWebview(this._view.webview);
+            }
+        }, 500);
+    }
+
     private async _saveApiKey(apiKey: string, provider: string) {
         // Skip validation for free backend
         if (provider === 'Free Backend' || !apiKey || apiKey.trim().length === 0) {
-            const config = vscode.workspace.getConfiguration('scanax');
-            await config.update('customApiKey', '', vscode.ConfigurationTarget.Global);
-            await config.update('provider', 'Free Backend', vscode.ConfigurationTarget.Global);
-            await this._context.globalState.update('hasSeenSetup', true);
-            await vscode.commands.executeCommand('setContext', 'scanax.setupComplete', true);
-            
-            this._view?.webview.postMessage({ type: 'success' });
-            setTimeout(() => {
-                if (this._view) {
-                    this._view.webview.html = this._getHtmlForWebview(this._view.webview);
-                }
-            }, 1000);
+            await this._completeSetup('Free Backend', '');
             return;
         }
 
@@ -149,23 +162,8 @@ export class WelcomeViewProvider implements vscode.WebviewViewProvider {
             }
 
             // API key validated successfully, save it
-            await config.update('customApiKey', trimmedKey, vscode.ConfigurationTarget.Global);
-            await config.update('provider', provider, vscode.ConfigurationTarget.Global);
-            await this._context.globalState.update('hasSeenSetup', true);
-            
-            // Set context key to hide the view
-            await vscode.commands.executeCommand('setContext', 'scanax.setupComplete', true);
-
-            this._view?.webview.postMessage({ type: 'success' });
-            
-            vscode.window.showInformationMessage(`Scanax: ${provider} API key validated and saved successfully!`);
-            
-            // Refresh view after short delay
-            setTimeout(() => {
-                if (this._view) {
-                    this._view.webview.html = this._getHtmlForWebview(this._view.webview);
-                }
-            }, 1000);
+            await this._completeSetup(provider, trimmedKey);
+            vscode.window.showInformationMessage(`Scanax: ${provider} API key validated successfully!`);
         } catch (error: any) {
             console.error('API key validation error:', error);
             this._view?.webview.postMessage({ 
@@ -196,52 +194,71 @@ export class WelcomeViewProvider implements vscode.WebviewViewProvider {
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
             <style>
+                * {
+                    box-sizing: border-box;
+                }
                 body {
-                    padding: 15px;
+                    padding: 20px;
+                    margin: 0;
                     color: var(--vscode-foreground);
                     font-family: var(--vscode-font-family);
                     font-size: 13px;
-                    line-height: 1.5;
+                    line-height: 1.6;
+                    overflow-y: auto;
                 }
                 h2 {
-                    font-size: 16px;
+                    font-size: 18px;
                     font-weight: 600;
-                    margin: 0 0 12px 0;
+                    margin: 0 0 8px 0;
+                    color: var(--vscode-foreground);
                 }
                 p {
-                    margin: 0 0 12px 0;
+                    margin: 0 0 16px 0;
                     color: var(--vscode-descriptionForeground);
+                    line-height: 1.5;
                 }
                 .input-group {
-                    margin-bottom: 10px;
+                    margin-bottom: 14px;
                 }
                 label {
                     display: block;
-                    margin-bottom: 4px;
+                    margin-bottom: 6px;
                     font-size: 12px;
+                    font-weight: 500;
+                    color: var(--vscode-foreground);
                 }
                 input, select {
                     width: 100%;
-                    padding: 6px;
+                    padding: 8px 10px;
                     background: var(--vscode-input-background);
                     color: var(--vscode-input-foreground);
                     border: 1px solid var(--vscode-input-border);
-                    border-radius: 2px;
-                    font-size: 12px;
+                    border-radius: 3px;
+                    font-size: 13px;
+                    outline: none;
+                }
+                input:focus, select:focus {
+                    border-color: var(--vscode-focusBorder);
                 }
                 button {
                     width: 100%;
-                    padding: 8px;
+                    padding: 10px;
                     background: var(--vscode-button-background);
                     color: var(--vscode-button-foreground);
                     border: none;
-                    border-radius: 2px;
+                    border-radius: 3px;
                     cursor: pointer;
-                    font-size: 12px;
-                    margin-top: 8px;
+                    font-size: 13px;
+                    font-weight: 500;
+                    margin-top: 10px;
+                    transition: background 0.1s ease;
                 }
-                button:hover {
+                button:hover:not(:disabled) {
                     background: var(--vscode-button-hoverBackground);
+                }
+                button:disabled {
+                    opacity: 0.6;
+                    cursor: not-allowed;
                 }
                 .skip-btn {
                     background: transparent;
@@ -269,8 +286,12 @@ export class WelcomeViewProvider implements vscode.WebviewViewProvider {
             </style>
         </head>
         <body>
-            <h2>Welcome to Scanax!</h2>
-            <p>Configure your LLM provider to start scanning.</p>
+            <h2>🛡️ Welcome to Scanax!</h2>
+            <p>Enterprise-grade security scanning powered by AI.</p>
+            
+            <button onclick="quickStart()" style="background: var(--vscode-button-background); margin-bottom: 20px;">🚀 Quick Start (Use Default)</button>
+            
+            <div style="text-align: center; margin: 15px 0; color: var(--vscode-descriptionForeground); font-size: 11px;">OR CONFIGURE CUSTOM PROVIDER</div>
             
             <div class="input-group">
                 <label>Provider Name</label>
@@ -292,6 +313,17 @@ export class WelcomeViewProvider implements vscode.WebviewViewProvider {
 
             <script>
                 const vscode = acquireVsCodeApi();
+
+                // Notify extension that webview is ready
+                window.addEventListener('load', () => {
+                    vscode.postMessage({ type: 'ready' });
+                });
+
+                function quickStart() {
+                    vscode.postMessage({ type: 'skipToReady' });
+                    document.getElementById('success').textContent = '✓ Starting Scanax...';
+                    document.getElementById('success').style.display = 'block';
+                }
 
                 function saveKey() {
                     const apiKey = document.getElementById('apiKey').value;

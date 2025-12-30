@@ -1,7 +1,7 @@
 {
   "name": "scanax",
   "displayName": "Scanax Security Scanner",
-  "description": "Advanced static analysis and AI-powered security vulnerability detection with real-time scanning, CWE/CVE classification, and automated fix generation",
+  "description": "Enterprise-grade security vulnerability scanner with AI-powered detection and automated remediation for 50+ vulnerability types across multiple languages",
   "version": "1.0.0",
   "publisher": "AyushiChaudhuri",
   "icon": "resources/encrypted.png",
@@ -38,7 +38,6 @@
   "main": "./out/src/extension.js",
   "activationEvents": [
     "onStartupFinished",
-    "onView:scanax.welcomeView",
     "onLanguage:javascript",
     "onLanguage:python",
     "onLanguage:typescript"
@@ -59,11 +58,13 @@
           "type": "webview",
           "id": "scanax.welcomeView",
           "name": "Setup",
+          "icon": "$(gear)",
           "when": "!scanax.setupComplete"
         },
         {
           "id": "scanax.securityDashboard",
           "name": "Security Dashboard",
+          "icon": "$(shield)",
           "when": "scanax.setupComplete"
         }
       ]
